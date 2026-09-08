@@ -6,20 +6,43 @@ A Shariah-compliant, SPOT-only BTC/USDT trading-agent foundation for **one owner
 logs remember, testing validates — and the user keeps full control of trade size and
 final authorization.* The AI is NEVER given unrestricted authority over money.
 
-This repository is **Delivery 1 (MVP foundation)** — a clean, tested Python library
-that implements the four non-bypassable policy gates and the `Signal → Shariah → Risk →
-Security → Execution` pipeline. Live trading ships **disabled by default**; only
-backtest and paper modes are in scope.
+This repository is the **MVP foundation (Deliveries 1–4)** — a clean, tested Python
+library plus FastAPI endpoints and a live control dashboard. It implements the four
+non-bypassable policy gates and the `Signal → Shariah → Risk → Security → Execution`
+pipeline. Live trading ships **disabled by default**; only backtest and paper modes are
+in scope.
 
 ## Layout
 
 ```
 halaltrade/
 ├── backend/            Python 3.11+ library (FastAPI-ready), pytest suite
-│   └── halaltrade/     the package: models, gates, pipeline, db
-├── frontend/           placeholder only — dashboard is a LATER delivery
+│   └── halaltrade/     the package: models, gates, pipeline, db, marketdata, paper, backtest, api
+├── frontend/           control dashboard (TanStack Start / React / Tailwind), mirrors /home/team/shared/site
 └── docs/               architecture + pipeline notes
 ```
+
+## Frontend / dashboard
+
+The control dashboard is a TanStack Start app served on **port 3000** (the team's public
+site surface) and published to the live URL. It polls the FastAPI backend
+(`http://127.0.0.1:8000`, overridable via `VITE_API_URL`) and provides:
+
+- **Paper / Live indicator** (Live is DISABLED by default)
+- **Emergency kill switch** — halts all trading end-to-end
+- **Account status** — paper balance, BTC holdings, equity, realized P&L, fees
+- **Market data** — BTC price, source, freshness (≤5s)
+- **Trade form** — manual spot BUY/SELL with exact USDT amount + optional stop-loss
+- **Backtest runner** — SMA-crossover simulation (clearly labeled, not a recommendation)
+- **Audit log viewer** — every gate decision recorded
+
+```
+cd frontend
+bun install
+bun run publish   # builds + serves on port 3000 (re-publishes the live site)
+```
+The dashboard source in this repo mirrors `/home/team/shared/site` — when it changes,
+re-run `bun run publish` there and mirror the source back into `frontend/`.
 
 ## Quick start (backend)
 
