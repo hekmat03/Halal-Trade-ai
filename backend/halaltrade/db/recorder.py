@@ -40,6 +40,68 @@ def _now() -> str:
     return utc_str()
 
 
+def record_order_event(
+    session: Session,
+    *,
+    signal_id: str,
+    client_order_id: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: float | None,
+    price: float | None,
+    status: str,
+    lifecycle: str,
+    executed_qty: float = 0.0,
+    cummulative_quote_qty: float = 0.0,
+    time_in_force: str | None = None,
+    post_only: bool | None = None,
+    limit_price: float | None = None,
+) -> None:
+    """Persist one order lifecycle event (create/update/cancel/fill) for audit.
+
+    Rows are keyed by ``client_order_id`` (unique): the first event inserts the
+    row, later events update the lifecycle + executed totals in place — so the
+    ``orders`` table always reflects the latest CONFIRMED state of each order.
+    """
+    row = session.query(Order).filter_by(client_order_id=client_order_id).first()
+    if row is None:
+        session.add(
+            Order(
+                timestamp=_now(),
+                signal_id=signal_id,
+                client_order_id=client_order_id,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                status=status,
+                lifecycle=lifecycle,
+                executed_qty=executed_qty,
+                cummulative_quote_qty=cummulative_quote_qty,
+                time_in_force=time_in_force,
+                post_only=post_only,
+                limit_price=limit_price,
+            )
+        )
+    else:
+        row.timestamp = _now()
+        row.quantity = quantity
+        row.price = price
+        row.status = status
+        row.lifecycle = lifecycle
+        row.executed_qty = executed_qty
+        row.cummulative_quote_qty = cummulative_quote_qty
+        if time_in_force is not None:
+            row.time_in_force = time_in_force
+        if post_only is not None:
+            row.post_only = post_only
+        if limit_price is not None:
+            row.limit_price = limit_price
+    session.commit()
+
+
 def record_paper_trade(
     session: Session,
     signal: Signal,

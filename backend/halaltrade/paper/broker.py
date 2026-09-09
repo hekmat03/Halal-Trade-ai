@@ -80,6 +80,14 @@ class PaperBroker:
         self._idempotency: set[str] = set()
         self._now = now or utcnow
         self._pipeline = pipeline
+        # Order manager: idempotent lifecycle (NEW -> ... -> FILLED) over the
+        # simulated fills, with every event audited when a session is set.
+        from ..orders import OrderManager
+        self.orders = OrderManager(self.settings, session=None, now=self._now)
+        # Position tracker: stop/TP/trailing monitoring + position-aware risk.
+        from ..positions import PositionTracker
+        self.positions = PositionTracker(self.account, self.settings, session=None,
+                                         now=self._now)
 
     # -- small public state helpers ------------------------------------------
     @property
@@ -99,6 +107,10 @@ class PaperBroker:
             account=RiskAccount(
                 balance=self.account.usdt,
                 current_position_value=self.account.btc * price,
+                daily_pnl=self.account.realized_pnl,
+                realized_pnl_today=self.account.realized_pnl,
+                open_position_count=1 if self.account.has_position else 0,
+                base_holdings=self.account.btc,
             ),
             idempotency_registry=self._idempotency,
             order_status_confirmed=True,  # the paper broker itself confirms fills
@@ -146,6 +158,29 @@ class PaperBroker:
 
         # 4. Explicit fill/confirmation step (never assumed). The no-shorting /
         #    fill-validity rules are enforced here, inside the simulation.
+        #    The order is registered with the OrderManager first (idempotent —
+        #    a retry returns the original result, never a duplicate), so the
+        #    full NEW -> FILLED lifecycle is tracked and audited.
+        from ..orders import OrderRequest
+        from ..orders.manager import OrderStatus
+        order_view = self.orders.submit(
+            OrderRequest(
+                side=eval_signal.side.value,  # type: ignore[arg-type]
+                symbol=eval_signal.symbol,
+                order_type="MARKET",
+                amount=eval_signal.amount,
+                price=ticker.price,
+                signal_id=eval_signal.client_order_id or "n/a",
+                client_order_id=eval_signal.client_order_id,
+            )
+        )
+        if order_view.status == OrderStatus.REJECTED.value:
+            return PaperResult(
+                executed=False,
+                reason=f"NO TRADE: order validation refused — {order_view.reason}",
+                signal=eval_signal,
+                pipeline=result,
+            )
         try:
             fill = self._simulate_fill(eval_signal, ticker)
         except (FillError, PositionError, ShortError) as exc:
@@ -155,6 +190,11 @@ class PaperBroker:
                 signal=eval_signal,
                 pipeline=result,
             )
+        # Confirm the fill against the tracked order (completes the lifecycle).
+        self.orders.apply_fill(
+            order_view.client_order_id, fill.quantity, fill.price, is_final=True,
+            reason="FILLED: simulated fill confirmed by paper broker.",
+        )
 
         return await self._confirm(signal=eval_signal, ticker=ticker, fill=fill, pipeline=result)
 
@@ -177,15 +217,22 @@ class PaperBroker:
             self.account.take_profit = signal.proposed_exit
 
         if signal.side == Side.BUY:
-            return self.account.buy(
+            fill = self.account.buy(
                 signal.amount, ticker.price,
                 client_order_id=signal.client_order_id, timestamp=ts,
             )
+            # Seed the trailing baseline from this entry price.
+            self.positions._arm_trailing(ticker.price)
+            return fill
         if signal.side == Side.SELL:
-            return self.account.sell_amount(
+            fill = self.account.sell_amount(
                 signal.amount, ticker.price,
                 client_order_id=signal.client_order_id, timestamp=ts,
             )
+            self.positions._realized_today = (
+                self.account.realized_pnl - self.positions._realized_base
+            )
+            return fill
         raise FillError(f"unsupported side for paper fill: {signal.side}")  # HOLD never reaches here
 
     async def _confirm(
@@ -198,12 +245,25 @@ class PaperBroker:
     ) -> PaperResult:
         """Persist the confirmed fill (if persistence is configured) and report."""
         if self.session is not None:
-            from ..db.recorder import record_paper_trade, record_position
+            from ..db.recorder import record_order_event, record_paper_trade, record_position
             record_paper_trade(
                 self.session, signal,
                 fill_price=fill.price, quantity=fill.quantity,
                 notional=fill.notional, fee=fill.fee,
             )
+            order_view = self.orders.get(signal.client_order_id or "")
+            if order_view is not None:
+                record_order_event(
+                    self.session, signal_id=signal.client_order_id or "n/a",
+                    client_order_id=order_view.client_order_id, symbol=signal.symbol,
+                    side=order_view.side, order_type=order_view.order_type,
+                    quantity=order_view.quantity, price=order_view.price,
+                    status="CONFIRMED", lifecycle=order_view.status,
+                    executed_qty=order_view.executed_qty,
+                    cummulative_quote_qty=order_view.cummulative_quote_qty,
+                    time_in_force=order_view.time_in_force,
+                    post_only=order_view.post_only,
+                )
             if fill.is_buy:
                 record_position(
                     self.session, mode="paper",
@@ -233,7 +293,15 @@ class PaperBroker:
         after refreshing market data to enforce the mandatory stop-loss. Returns
         True when the stop fired and closed the position.
         """
-        if self.account.hit_stop_loss(price, client_order_id=client_order_id):
+        report = self.positions.on_price(price)
+        if report.closed and report.reason == "STOP_LOSS":
             logger.info("paper stop-loss fired at %s (client order %s)", price, client_order_id)
             return True
         return False
+
+    def monitor_price(self, price: float):
+        """Run the full position monitor (stop -> TP -> trailing) on a new price.
+
+        Returns the :class:`CloseReport` (``closed=False`` when nothing fired).
+        """
+        return self.positions.on_price(price)

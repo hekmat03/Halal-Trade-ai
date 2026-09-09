@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     max_daily_loss: float = 100.0         # max aggregate daily loss (USDT)
     max_drawdown: float = 0.10            # max allowed drawdown (fraction of peak)
     min_account_balance: float = 100.0    # below this the account cannot trade (USDT)
+    max_open_positions: int = 1           # max concurrent open positions (single-asset bot)
+    qty_step: float = 0.00001             # BTCUSDT minimum quantity step (LOT_SIZE)
     # --- Execution validation -----------------------------------------------------
     min_notional: float = 5.0             # BTCUSDT Binance minimum order notional (USDT)
     max_data_age_seconds: float = 5.0     # reject any signal older than this
