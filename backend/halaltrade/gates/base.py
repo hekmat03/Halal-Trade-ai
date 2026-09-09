@@ -32,6 +32,14 @@ class RiskAccount:
     current_position_value: float = 0.0
     daily_pnl: float = 0.0
     equity_peak: Optional[float] = None
+    # --- Position-aware fields (Delivery 5: fed from live position state) ---
+    # Number of currently open positions (single-asset bot: 0 or 1).
+    open_position_count: int = 0
+    # Owned base-asset quantity (BTC) — the never-short SELL check consults this.
+    base_holdings: float = 0.0
+    # Realized P&L for the current day (USDT). When None, the Risk gate falls
+    # back to ``daily_pnl`` so older callers behave exactly as before.
+    realized_pnl_today: Optional[float] = None
 
     def equity(self) -> float:
         return self.balance + self.current_position_value

@@ -123,6 +123,16 @@ class Order(Base):
     quantity: Mapped[float | None] = mapped_column(Float, default=None)
     price: Mapped[float | None] = mapped_column(Float, default=None)
     status: Mapped[str] = mapped_column(String(32))  # CONFIRMED from source, never assumed
+    # --- Delivery 5: full order lifecycle (Binance-shaped) ---
+    # NEW | PARTIALLY_FILLED | FILLED | CANCELED | EXPIRED | REJECTED.
+    # The DB column keeps the legacy coarser values (e.g. "CONFIRMED") wherever
+    # older writers stored them; new lifecycle events write the exact state.
+    lifecycle: Mapped[str] = mapped_column(String(32), default="NEW")
+    executed_qty: Mapped[float | None] = mapped_column(Float, default=0.0)
+    cummulative_quote_qty: Mapped[float | None] = mapped_column(Float, default=0.0)
+    time_in_force: Mapped[str | None] = mapped_column(String(8), default=None)  # GTC|IOC|FOK
+    post_only: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    limit_price: Mapped[float | None] = mapped_column(Float, default=None)
 
 
 class Position(Base):

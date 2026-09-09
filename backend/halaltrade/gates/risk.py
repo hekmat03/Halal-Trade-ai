@@ -8,8 +8,16 @@ Rules:
 * Position size cap, exposure cap, loss-per-trade cap, daily-loss cap and
   drawdown cap are enforced as hard ceilings.
 * A minimum account balance is required to trade.
+* Max concurrent open positions: a BUY that opens a NEW position while the
+  position cap (``max_open_positions``, default 1) is already reached is
+  rejected. The caller feeds live position state via ``RiskAccount``.
+* Never-short invariant: a SELL may only dispose of owned base asset
+  (``RiskAccount.base_holdings``); selling more than held is rejected.
+* Daily-loss limit consults realized P&L for the day (``realized_pnl_today``,
+  falling back to ``daily_pnl`` when unset).
 
 All caps come from ``Settings`` (env configurable) so the owner controls them.
+Every failed check carries an explicit ``REJECT: ...`` reason for the audit log.
 """
 from __future__ import annotations
 
@@ -51,12 +59,46 @@ class RiskGate(Gate):
 
         reasons.append(f"OK: explicit size present (notional={notional:.6f} USDT).")
 
+        account = context.account or RiskAccount()
+
         # --- 2. Mandatory stop-loss on every trade ---
         if signal.stop_loss is None:
             failed.append("REJECT: mandatory stop-loss missing on this trade.")
             reasons.append("REJECT: stop-loss is mandatory on every trade.")
         else:
             reasons.append(f"OK: stop-loss present ({signal.stop_loss}).")
+
+        # --- 2b. Never-short invariant (SELL can only dispose of owned BTC) ---
+        # The gate cannot create an order quantity from an amount-only SELL, so it
+        # enforces the invariant where it can be stated exactly: an explicit
+        # quantity must not exceed what is owned. (The simulation/fill layer
+        # enforces the same rule on computed quantities as the final backstop.)
+        if signal.side.value == "SELL" and signal.quantity is not None:
+            if signal.price is not None and signal.price <= 0:
+                failed.append("REJECT: non-positive SELL price — size is unverifiable.")
+            elif signal.quantity > account.base_holdings + 1e-12:
+                failed.append(
+                    f"REJECT: SELL {signal.quantity:.8f} BTC exceeds owned holdings "
+                    f"{account.base_holdings:.8f} (no shorting allowed)."
+                )
+            else:
+                reasons.append(
+                    f"OK: SELL {signal.quantity:.8f} <= owned {account.base_holdings:.8f}."
+                )
+
+        # --- 2c. Max concurrent open positions (a new BUY opens a position) ---
+        if signal.side.value == "BUY":
+            if account.open_position_count >= settings.max_open_positions:
+                failed.append(
+                    f"REJECT: already holding {account.open_position_count} open "
+                    f"position(s) >= max_open_positions {settings.max_open_positions} "
+                    "(single-asset bot holds at most one position)."
+                )
+            else:
+                reasons.append(
+                    f"OK: open positions {account.open_position_count} < "
+                    f"max {settings.max_open_positions}."
+                )
 
         # --- 3. Caps (only evaluated if we already have a real trade) ---
         if signal.amount is not None and signal.amount > settings.max_position_size:
@@ -71,7 +113,6 @@ class RiskGate(Gate):
                     f"max_position_size {settings.max_position_size}."
                 )
 
-        account = context.account or RiskAccount()
         equity = account.equity()
         if equity < settings.min_account_balance:
             failed.append(
@@ -110,11 +151,19 @@ class RiskGate(Gate):
             else:
                 reasons.append(f"OK: stop-distance risk {risk_usd:.2f} within cap.")
 
-        if account.daily_pnl < -settings.max_daily_loss:
+        # --- Daily-loss limit (consults realized P&L for the day) ---
+        day_pnl = (
+            account.realized_pnl_today
+            if account.realized_pnl_today is not None
+            else account.daily_pnl
+        )
+        if day_pnl < -settings.max_daily_loss:
             failed.append(
-                f"REJECT: daily P&L {account.daily_pnl:.2f} exceeds max_daily_loss "
+                f"REJECT: realized daily P&L {day_pnl:.2f} exceeds max_daily_loss "
                 f"{settings.max_daily_loss}."
             )
+        else:
+            reasons.append(f"OK: daily P&L {day_pnl:.2f} within loss cap.")
 
         if account.equity_peak and account.equity_peak > 0:
             dd = (account.equity_peak - equity) / account.equity_peak

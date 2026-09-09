@@ -221,6 +221,10 @@ class BacktestEngine:
             account=RiskAccount(
                 balance=account.usdt,
                 current_position_value=account.btc * price,
+                daily_pnl=account.realized_pnl,
+                realized_pnl_today=account.realized_pnl,
+                open_position_count=1 if account.has_position else 0,
+                base_holdings=account.btc,
             ),
             idempotency_registry=set(),
             order_status_confirmed=True,
