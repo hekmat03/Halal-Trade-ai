@@ -51,6 +51,27 @@ class Settings(BaseSettings):
     binance_ws_base: str = "wss://stream.binance.com:9443"
     # --- Persistence --------------------------------------------------------------
     database_url: str = "sqlite:///halaltrade.db"  # SQLite for dev; Postgres later
+    # --- Prayer-time pause (optional, user-configurable; see gates/prayer_time.py) -
+    pause_during_prayer_times: bool = False
+    # Comma-separated "HH:MM-HH:MM" UTC windows, e.g. "04:30-04:50,12:15-12:35".
+    # The system does NOT calculate prayer times itself — the user supplies the
+    # exact UTC windows for their location/method/madhhab.
+    prayer_windows_utc: str = ""
+    # --- Zakat (optional, user-configurable; see zakat.py) -------------------------
+    zakat_enabled: bool = False
+    # Nisab threshold in USDT below which no Zakat is due. The user is
+    # responsible for setting this to the correct current nisab value (e.g.
+    # based on gold/silver price) — this system does not calculate nisab.
+    zakat_nisab_usdt: float = 0.0
+    zakat_rate: float = 0.025  # standard 2.5%
+    # --- AI research layer (optional; ANALYSIS/RECOMMENDATION ONLY — see
+    #     research/mistral_client.py. The LLM can never execute a trade.) -----
+    mistral_api_key: str = ""
+    mistral_model: str = "mistral-small"
+    mistral_temperature: float = 0.2
+    mistral_max_tokens: int = 1024
+    mistral_timeout_seconds: float = 10.0
+    mistral_rate_limit_per_minute: int = 10
     # ------------------------------------------------------------------------------
     def requires_binance_credentials(self) -> bool:
         """Whether this mode needs real, valid Binance credentials to trade."""
