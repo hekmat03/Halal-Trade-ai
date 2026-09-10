@@ -1,3 +1,3 @@
-from .mistral_client import AIAnalysis, MistralAnalyzer, build_prompt, parse_response
+from .detector import MarketRegime, RegimeResult, detect_regime
 
-__all__ = ["AIAnalysis", "MistralAnalyzer", "build_prompt", "parse_response"]
+__all__ = ["MarketRegime", "RegimeResult", "detect_regime"]
