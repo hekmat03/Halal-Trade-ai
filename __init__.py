@@ -1,3 +1,3 @@
-from .opportunity import Opportunity, rank_opportunities
+from .detector import MarketRegime, RegimeResult, detect_regime
 
-__all__ = ["Opportunity", "rank_opportunities"]
+__all__ = ["MarketRegime", "RegimeResult", "detect_regime"]
