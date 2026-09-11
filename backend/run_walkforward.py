@@ -12,7 +12,7 @@ from halaltrade.validation.walkforward import generate_walk_forward_windows, run
 
 def fetch_binance_klines_paginated(symbol="BTCUSDT", interval="1h", total_candles=4000):
     """Fetch more than 1000 candles by paging backwards from now."""
-    url = "https://api.binance.com/api/v3/klines"
+    url = "https://data-api.binance.vision/api/v3/klines"
     all_rows = []
     end_time = None
     while len(all_rows) < total_candles:
