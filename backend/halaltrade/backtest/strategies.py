@@ -23,6 +23,7 @@ from ..indicators.core import atr as atr_series
 from ..indicators.core import bollinger_bands, donchian_channel, ema, rsi
 from ..marketdata.models import Candle
 from ..models import Side, Signal
+from ..regime.detector import MarketRegime, detect_regime
 from ..sizing.kelly import KellyInputs, half_kelly_position_size
 from .base import Strategy
 
@@ -34,6 +35,7 @@ __all__ = [
     "make_ema_trend",
     "make_rsi_mean_reversion",
     "make_donchian_breakout",
+    "make_regime_filtered",
 ]
 
 
@@ -107,8 +109,6 @@ def make_sma_cross(
             else:
                 amount = fixed_notional
             if amount <= 0:
-                # No statistical edge (or zero equity) -> Kelly says don't size
-                # this trade at all. Stay flat rather than force a trade.
                 return Signal(side=Side.HOLD, reason="Kelly sizing returned 0 — no edge, staying flat.")
             return Signal(
                 side=Side.BUY,
@@ -251,7 +251,7 @@ def make_rsi_mean_reversion(
                 price=price,
                 amount=amount,
                 stop_loss=price * (1 - stop_loss_pct),
-                proposed_exit=mid[-1],  # target: revert to the mean, not a fixed %
+                proposed_exit=mid[-1],
                 reason=f"RSI={current_rsi:.1f} < {oversold} and price at/below lower Bollinger band.",
             )
         if position and (current_rsi > overbought or price >= mid[-1]):
@@ -323,4 +323,83 @@ def make_donchian_breakout(
         return Signal(side=Side.HOLD)
 
     strategy.__name__ = f"donchian_breakout_{channel_period}"  # type: ignore[attr-defined]
+    return strategy
+
+
+def make_regime_filtered(
+    base_strategy: Strategy,
+    allowed_regimes: set[MarketRegime],
+    *,
+    fast_period: int = 12,
+    slow_period: int = 26,
+    atr_period: int = 14,
+) -> Strategy:
+    """Wrap any strategy so it only opens NEW positions when the market is
+    in a regime it was actually designed for.
+
+    Rationale: EMA Trend, RSI Mean-Reversion, and Donchian Breakout all
+    showed weak/inconsistent results in walk-forward testing when run
+    unconditionally over every market condition. A trend-following strategy
+    firing false signals during a RANGING market (whipsaws) is a well-known
+    failure mode — filtering entries by regime is the standard fix, tried
+    BEFORE assuming the underlying strategy logic itself is worthless.
+
+    Behavior:
+    * BUY signals from the base strategy are only forwarded if the current
+      regime (computed from the SAME candle window, no look-ahead) is in
+      ``allowed_regimes``. Otherwise the BUY is suppressed -> HOLD.
+    * SELL signals (closing an existing position) are ALWAYS forwarded
+      regardless of regime — an exit should never be blocked by a filter,
+      only new entries.
+    * If regime detection itself returns UNCLEAR (insufficient data), no new
+      BUY is allowed either, consistent with the regime detector's own
+      "if Unclear -> no trade" rule.
+
+    This does NOT change the base strategy's own logic at all — it is a
+    pure decorator, so the underlying strategy can still be tested and
+    reasoned about independently of this filter.
+
+    IMPORTANT — align the periods: pass the SAME fast/slow/ATR periods used
+    by the base strategy (e.g. if wrapping ``make_ema_trend(fast=5, slow=10)``,
+    pass ``fast_period=5, slow_period=10`` here too). Using different periods
+    means the regime classification can lag or disagree with the base
+    strategy's own signal timing — verified empirically: with mismatched
+    periods (this filter's slower 12/26 defaults vs. a 5/10 base strategy),
+    the filter blocked a BUY at the exact bar the base strategy fired,
+    because the regime detector's slower EMAs hadn't confirmed the trend yet
+    even though the faster strategy already had. That's not a bug in either
+    piece — it's a timing mismatch from using two different lookback
+    windows on the same data. Keep them aligned unless you deliberately want
+    the filter to require a SLOWER, more mature trend confirmation than the
+    base strategy's own entry signal (a legitimate, more conservative choice
+    — just make it on purpose, not by accident).
+    """
+
+    def strategy(candles: list[Candle], position: float, equity: float) -> Signal:
+        base_signal = base_strategy(candles, position, equity)
+
+        if base_signal.side != Side.BUY:
+            return base_signal  # SELL and HOLD always pass through unfiltered
+
+        closes = [c.close for c in candles]
+        highs = [c.high for c in candles]
+        lows = [c.low for c in candles]
+        regime_result = detect_regime(
+            closes, highs, lows,
+            fast_period=fast_period, slow_period=slow_period, atr_period=atr_period,
+        )
+
+        if regime_result.regime not in allowed_regimes:
+            return Signal(
+                side=Side.HOLD,
+                reason=(
+                    f"Regime filter blocked entry: base strategy wanted BUY but "
+                    f"regime is {regime_result.regime.value} (allowed: "
+                    f"{sorted(r.value for r in allowed_regimes)}). {regime_result.reason}"
+                ),
+            )
+        return base_signal
+
+    base_name = getattr(base_strategy, "__name__", "strategy")
+    strategy.__name__ = f"regime_filtered_{base_name}"  # type: ignore[attr-defined]
     return strategy
