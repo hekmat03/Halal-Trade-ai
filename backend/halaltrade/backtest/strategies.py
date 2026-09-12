@@ -54,12 +54,7 @@ def _kelly_or_fixed_amount(
 
 
 class HoldStrategy:
-    """No-op / HOLD strategy: never recommends a trade.
-
-    Included so the pipeline's deliberate "do nothing" path is exercised:
-    HOLD signals carry no size and are rejected by the Risk gate, resolving to
-    NO TRADE. This is an example, not a strategy.
-    """
+    """No-op / HOLD strategy: never recommends a trade."""
 
     name = "hold"
 
@@ -76,20 +71,7 @@ def make_sma_cross(
     kelly_max_fraction: float = 0.10,
     fixed_notional: float = 100.0,
 ) -> Strategy:
-    """Simple moving-average crossover strategy (example only, not validated).
-
-    BUY when the fast SMA crosses above the slow SMA and there is no position;
-    SELL (close) when the fast SMA crosses below the slow SMA while holding.
-    Every BUY carries a mandatory stop-loss and an optional take-profit derived
-    from the requested percentages, so it satisfies the Risk gate.
-
-    Position sizing: if ``kelly_inputs`` is supplied (historical win-rate/
-    payoff stats from a prior backtest — see ``halaltrade.sizing.kelly``), the
-    BUY notional is computed via half-Kelly, capped at ``kelly_max_fraction``
-    of equity. Without ``kelly_inputs`` (the default), it falls back to a
-    flat ``fixed_notional`` per trade — the Risk Gate's hard caps
-    (``max_position_size`` etc.) are the final word either way.
-    """
+    """Simple moving-average crossover strategy (example only, not validated)."""
 
     def _sma(closes: list[float], window: int) -> float:
         return sum(closes[-window:]) / window
@@ -145,22 +127,7 @@ def make_ema_trend(
     kelly_max_fraction: float = 0.10,
     fixed_notional: float = 100.0,
 ) -> Strategy:
-    """Trend-following: EMA fast/slow crossover with ATR-based volatility stops.
-
-    BUY when the fast EMA crosses above the slow EMA and flat. Stop-loss and
-    take-profit are set at ``atr_mult_stop`` / ``atr_mult_target`` multiples of
-    the current ATR below/above entry — this adapts the stop distance to
-    actual recent volatility instead of a fixed percentage, which is the
-    standard fix for a fixed-% stop being too tight in high volatility and
-    too loose in low volatility.
-
-    SELL (close) when the fast EMA crosses back below the slow EMA.
-
-    Recomputes the full EMA/ATR series on every call (O(n) per bar), which
-    means a full backtest run is O(n^2) overall. Fine for research-scale
-    history; a live/streaming version should maintain incremental state
-    instead of recomputing from scratch every bar.
-    """
+    """Trend-following: EMA fast/slow crossover with ATR-based volatility stops."""
 
     def strategy(candles: list[Candle], position: float, equity: float) -> Signal:
         closes = [c.close for c in candles]
@@ -214,19 +181,7 @@ def make_rsi_mean_reversion(
     kelly_max_fraction: float = 0.10,
     fixed_notional: float = 100.0,
 ) -> Strategy:
-    """Mean-reversion: RSI oversold + price at/below the lower Bollinger Band.
-
-    BUY only when BOTH conditions agree (RSI < oversold AND close <= lower
-    band) — requiring two independent confirmations is a deliberate filter
-    against acting on a single noisy indicator. Exit when RSI recovers above
-    the overbought line OR price reverts back to the middle band (mean),
-    whichever comes first — mean reversion strategies exit at the mean, not
-    by chasing a large take-profit target.
-
-    A fixed-percentage stop-loss (``stop_loss_pct``) is used here rather than
-    ATR, since this strategy is explicitly betting AGAINST volatility
-    continuing, so sizing the stop off current ATR would be circular.
-    """
+    """Mean-reversion: RSI oversold + price at/below the lower Bollinger Band."""
 
     def strategy(candles: list[Candle], position: float, equity: float) -> Signal:
         closes = [c.close for c in candles]
@@ -273,18 +228,7 @@ def make_donchian_breakout(
     kelly_max_fraction: float = 0.10,
     fixed_notional: float = 100.0,
 ) -> Strategy:
-    """Breakout: BUY when price closes above the prior N-bar Donchian high.
-
-    ``donchian_channel`` deliberately excludes the current bar from its own
-    window (see ``indicators/core.py``), so "breaking the channel" means
-    breaking a level set by PRIOR bars — not a level that already includes
-    today's own high, which would make a breakout structurally unable to
-    trigger. Stop-loss is set at an ATR multiple below entry; there is no
-    explicit take-profit — breakouts are typically ridden with a trailing
-    stop rather than a fixed target (trailing-stop wiring already exists in
-    ``positions/tracker.py`` and can be layered on top of this strategy at
-    the position-management level).
-    """
+    """Breakout: BUY when price closes above the prior N-bar Donchian high."""
 
     def strategy(candles: list[Candle], position: float, equity: float) -> Signal:
         closes = [c.close for c in candles]
@@ -337,49 +281,16 @@ def make_regime_filtered(
     """Wrap any strategy so it only opens NEW positions when the market is
     in a regime it was actually designed for.
 
-    Rationale: EMA Trend, RSI Mean-Reversion, and Donchian Breakout all
-    showed weak/inconsistent results in walk-forward testing when run
-    unconditionally over every market condition. A trend-following strategy
-    firing false signals during a RANGING market (whipsaws) is a well-known
-    failure mode — filtering entries by regime is the standard fix, tried
-    BEFORE assuming the underlying strategy logic itself is worthless.
-
-    Behavior:
-    * BUY signals from the base strategy are only forwarded if the current
-      regime (computed from the SAME candle window, no look-ahead) is in
-      ``allowed_regimes``. Otherwise the BUY is suppressed -> HOLD.
-    * SELL signals (closing an existing position) are ALWAYS forwarded
-      regardless of regime — an exit should never be blocked by a filter,
-      only new entries.
-    * If regime detection itself returns UNCLEAR (insufficient data), no new
-      BUY is allowed either, consistent with the regime detector's own
-      "if Unclear -> no trade" rule.
-
-    This does NOT change the base strategy's own logic at all — it is a
-    pure decorator, so the underlying strategy can still be tested and
-    reasoned about independently of this filter.
-
     IMPORTANT — align the periods: pass the SAME fast/slow/ATR periods used
-    by the base strategy (e.g. if wrapping ``make_ema_trend(fast=5, slow=10)``,
-    pass ``fast_period=5, slow_period=10`` here too). Using different periods
-    means the regime classification can lag or disagree with the base
-    strategy's own signal timing — verified empirically: with mismatched
-    periods (this filter's slower 12/26 defaults vs. a 5/10 base strategy),
-    the filter blocked a BUY at the exact bar the base strategy fired,
-    because the regime detector's slower EMAs hadn't confirmed the trend yet
-    even though the faster strategy already had. That's not a bug in either
-    piece — it's a timing mismatch from using two different lookback
-    windows on the same data. Keep them aligned unless you deliberately want
-    the filter to require a SLOWER, more mature trend confirmation than the
-    base strategy's own entry signal (a legitimate, more conservative choice
-    — just make it on purpose, not by accident).
+    by the base strategy, or the regime classification can lag/disagree with
+    the base strategy's own signal timing.
     """
 
     def strategy(candles: list[Candle], position: float, equity: float) -> Signal:
         base_signal = base_strategy(candles, position, equity)
 
         if base_signal.side != Side.BUY:
-            return base_signal  # SELL and HOLD always pass through unfiltered
+            return base_signal
 
         closes = [c.close for c in candles]
         highs = [c.high for c in candles]
