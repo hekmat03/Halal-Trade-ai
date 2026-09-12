@@ -300,6 +300,7 @@ def make_regime_filtered(
         regime_result = detect_regime(
             closes, highs, lows,
             fast_period=fast_period, slow_period=slow_period, atr_period=atr_period,
+            weak_threshold=weak_threshold, strong_threshold=strong_threshold,
         )
 
         if regime_result.regime not in allowed_regimes:
