@@ -277,6 +277,8 @@ def make_regime_filtered(
     fast_period: int = 12,
     slow_period: int = 26,
     atr_period: int = 14,
+    weak_threshold: float = 0.3,
+    strong_threshold: float = 1.5,
 ) -> Strategy:
     """Wrap any strategy so it only opens NEW positions when the market is
     in a regime it was actually designed for.
