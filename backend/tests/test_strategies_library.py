@@ -15,7 +15,9 @@ from halaltrade.backtest import make_hold, make_sma_cross  # legacy aliases inta
 from halaltrade.marketdata import Candle
 from halaltrade.models import InstrumentType, Side
 from halaltrade.strategies import (
+    STRATEGY_NAMES,
     DonchianBreakoutStrategy,
+    EmaTrendStrategy,
     RsiMeanReversionStrategy,
     SmaCrossStrategy,
     get_strategy,
@@ -41,23 +43,80 @@ def climb_then_flat(n: int = 60) -> list[Candle]:
     return [mk(100 + i * 1.5 if i < 30 else 145, i=i) for i in range(n)]
 
 
-def test_registry_lists_three_strategies() -> None:
-    assert list_strategies() == ["donchian_breakout", "rsi_mean_reversion", "sma_cross"]
+def test_ema_trend_family_entries_exits_and_entry_only_filters() -> None:
+    """EMA-trend family: cross entries, exit-only SELLs, filters gate entries.
+
+    The library emits signals only on an actual MA crossover (never on a
+    monotonic ramp), so these fixtures are built to cross on the final bar.
+    """
+    # Down 7 bars then a sharp reversal -> fast EMA crosses up on the last bar.
+    cross_up = [mk(c, i=i) for i, c in enumerate(
+        [120, 118, 116, 114, 112, 110, 108, 130])]
+    strat = EmaTrendStrategy(fast=3, slow=6)
+    sig = strat(cross_up, 0.0, 5000.0)
+    assert sig.side == Side.BUY
+    assert sig.stop_loss is not None                 # mandatory stop always set
+    assert sig.instrument_type == InstrumentType.SPOT and sig.leverage == 1.0
+    # Mirror image -> fast EMA crosses down while holding: exit only, no short.
+    cross_down = [mk(c, i=i) for i, c in enumerate(
+        [120, 122, 124, 126, 128, 130, 132, 110])]
+    sig2 = strat(cross_down, 0.01, 5000.0)
+    assert sig2.side == Side.SELL
+    assert sig2.amount is not None and sig2.stop_loss is not None
+    assert strat(cross_down, 0.0, 5000.0).side == Side.HOLD  # flat -> no short
+    # Filters gate ENTRIES only (flat volume never confirms).
+    assert strat.with_params(volume_filter_bars=5)(cross_up, 0.0, 5000.0).side == Side.HOLD
+    # ...and never block an exit.
+    assert strat.with_params(volume_filter_bars=5)(cross_down, 0.01,
+                                                  5000.0).side == Side.SELL
+    # Regime filter on too-short history -> regime "unknown" -> no entry.
+    assert strat.with_params(regime_filter="trending-up")(cross_up, 0.0,
+                                                          5000.0).side == Side.HOLD
+
+
+def test_registry_matches_the_librarys_documented_strategy_set() -> None:
+    """The registry must expose exactly the strategies the library ships.
+
+    The set of strategies GROWS as the research library grows (Delivery 6
+    started with three; the EMA-trend family and the 1d RSI preset were added
+    later), so this asserts the registry against the library's own documented
+    ``STRATEGY_NAMES`` instead of a frozen count. Adding a strategy means
+    adding it to ``STRATEGY_NAMES`` deliberately — never deleting one.
+    """
+    expected = sorted(STRATEGY_NAMES)
+    assert list_strategies() == expected
+    assert len(list_strategies()) == len(set(list_strategies()))  # no dupes
     for name in list_strategies():
-        assert get_strategy(name) is not None
+        strat = get_strategy(name)
+        assert strat is not None
+        assert strat.meta.name                      # documented metadata
+        assert strat.meta.validated is False        # nothing is validated yet
     with pytest.raises(KeyError):
         get_strategy("nope")
 
 
 def test_metadata_present_and_unvalidated() -> None:
     for strat in (SmaCrossStrategy(), RsiMeanReversionStrategy(),
-                  DonchianBreakoutStrategy()):
+                  DonchianBreakoutStrategy(), EmaTrendStrategy()):
         assert strat.meta.name
-        assert strat.meta.timeframe in ("1h", "4h")
+        assert strat.meta.timeframe in ("1h", "4h", "1d")
         assert strat.meta.params
         assert strat.meta.risk_class
         assert strat.meta.validated is False
         assert strat.meta.notes
+
+
+def test_named_1d_research_presets_carry_the_sweep_parameters() -> None:
+    """The named presets must stay pinned to the params actually measured."""
+    rsi = get_strategy("rsi_mean_reversion_1d")
+    assert (rsi.period, rsi.oversold, rsi.overbought) == (7, 30.0, 70.0)
+    assert (rsi.stop_loss_pct, rsi.take_profit_pct) == (0.03, 0.06)
+    assert rsi.timeframe == "1d"
+    dc = get_strategy("donchian_1d")
+    assert (dc.channel, dc.timeframe) == (15, "1d")
+    assert (dc.stop_loss_pct, dc.take_profit_pct) == (0.02, 0.05)
+    # Both remain research candidates: nothing is validated, ever, by a sweep.
+    assert rsi.meta.validated is False and dc.meta.validated is False
 
 
 def test_sma_cross_buy_has_stop_and_sell_is_exit_only() -> None:

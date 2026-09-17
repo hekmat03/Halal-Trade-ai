@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import itertools
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from pydantic import BaseModel, Field
@@ -69,6 +69,7 @@ class FoldReport(BaseModel):
     validation: PerformanceReport | None = None  # selection segment
     test: PerformanceReport | None = None        # honest out-of-sample
     candidates_evaluated: int = 0
+    warmup_bars: int = 0                         # real prior bars used to warm up
 
 
 @dataclass
@@ -82,6 +83,15 @@ class WalkForwardConfig:
     metric: str = "total_return"   # optimized on train, selected on validation
     top_k: int = 3                 # train shortlist carried into validation
     min_segment_bars: int = 10     # skip folds with smaller segments
+    warmup_bars: int = 0           # real bars prepended per segment (see below)
+
+    # ``warmup_bars``: how many *real* bars immediately preceding a segment are
+    # prepended to it purely so slow indicators (EMA 50, Donchian 100, regime
+    # detection over 30+ bars) have history to warm up on. Those bars are the
+    # past at segment time, so this is NOT look-ahead — and the engine is told
+    # via ``BacktestConfig.warmup`` to skip them entirely: no trading, no
+    # equity, no trades counted. Metrics therefore still describe the segment
+    # only. Default 0 = byte-for-byte the old behaviour.
 
 
 @dataclass
@@ -131,6 +141,23 @@ def _fold_bounds(n: int, cfg: WalkForwardConfig) -> list[tuple[int, int, int, in
     return bounds
 
 
+def _segment(
+    candles: list[Candle], start: int, end: int, warmup_bars: int
+) -> tuple[list[Candle], int]:
+    """Slice ``candles[start:end]``, prepending up to ``warmup_bars`` real bars.
+
+    Returns ``(candles_for_engine, warmup_count)``. The prepended bars are
+    strictly past data (never future), and ``warmup_count`` is handed to the
+    engine as ``BacktestConfig.warmup`` so they are skipped entirely: the
+    strategy sees them as history, but no trade and no equity is recorded
+    during them.
+    """
+    if warmup_bars <= 0:
+        return candles[start:end], 0
+    w = min(warmup_bars, start)
+    return candles[start - w:end], w
+
+
 def walk_forward(
     strategy_factory: Callable[..., Any],
     candles: list[Candle],
@@ -170,21 +197,26 @@ def walk_forward(
     is_scores: list[float] = []
 
     for f, (ts, te, vs, ve, es, ee) in enumerate(_fold_bounds(len(candles), cfg)):
-        train = candles[ts:te]
-        val = candles[vs:ve]
-        test = candles[es:ee]
-        if min(len(train), len(val), len(test)) < cfg.min_segment_bars:
+        train, w_train = _segment(candles, ts, te, cfg.warmup_bars)
+        val, w_val = _segment(candles, vs, ve, cfg.warmup_bars)
+        test, w_test = _segment(candles, es, ee, cfg.warmup_bars)
+        train_cfg = replace(bt_cfg, warmup=w_train) if w_train else bt_cfg
+        val_cfg = replace(bt_cfg, warmup=w_val) if w_val else bt_cfg
+        test_cfg = replace(bt_cfg, warmup=w_test) if w_test else bt_cfg
+        if min(len(train) - w_train, len(val) - w_val,
+               len(test) - w_test) < cfg.min_segment_bars:
             report.notes.append(
                 f"fold {f}: skipped — segment too small "
-                f"(train={len(train)}, val={len(val)}, test={len(test)} "
-                f"< min {cfg.min_segment_bars})"
+                f"(train={len(train) - w_train}, val={len(val) - w_val}, "
+                f"test={len(test) - w_test} < min {cfg.min_segment_bars}, "
+                f"excluding {cfg.warmup_bars} warmup bars)"
             )
             continue
         # 1. Optimize on train only.
         train_scored: list[tuple[float, dict[str, Any], PerformanceReport]] = []
         for params in combos:
             strategy = strategy_factory(**params)
-            res = engine.run(strategy, train, bt_cfg,
+            res = engine.run(strategy, train, train_cfg,
                              strategy_name=f"{strategy_name}@{params}")
             train_scored.append((score_report(res.report, cfg.metric), params, res.report))
         train_scored.sort(key=lambda t: t[0], reverse=True)
@@ -196,7 +228,7 @@ def walk_forward(
         best_train_report = shortlist[0][2]
         for _, params, _ in shortlist:
             strategy = strategy_factory(**params)
-            res = engine.run(strategy, val, bt_cfg,
+            res = engine.run(strategy, val, val_cfg,
                              strategy_name=f"{strategy_name}@{params}")
             s = score_report(res.report, cfg.metric)
             if s > best_val_score:
@@ -209,11 +241,11 @@ def walk_forward(
         if selected_train is None:
             strategy = strategy_factory(**best_params)
             selected_train = engine.run(
-                strategy, train, bt_cfg,
+                strategy, train, train_cfg,
                 strategy_name=f"{strategy_name}@{best_params}").report
         # 3. Honest out-of-sample on test.
         strategy = strategy_factory(**best_params)
-        test_res = engine.run(strategy, test, bt_cfg,
+        test_res = engine.run(strategy, test, test_cfg,
                               strategy_name=f"{strategy_name}@{best_params}")
         fold = FoldReport(
             fold=f, train_start=ts, train_end=te,
@@ -221,6 +253,7 @@ def walk_forward(
             best_params=dict(best_params),
             train=selected_train, validation=best_val_report,
             test=test_res.report, candidates_evaluated=len(combos),
+            warmup_bars=cfg.warmup_bars,
         )
         report.folds.append(fold)
         is_s = score_report(selected_train, cfg.metric)

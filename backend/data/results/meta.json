@@ -1,0 +1,272 @@
+{
+  "generated_at": "2026-09-17T18:59:56+00:00",
+  "source": "data.binance.vision (Binance public kline archive) \u2014 real data, no synthetic substitution",
+  "datasets": {
+    "1h": {
+      "candles": 4656,
+      "first": "2026-03-01",
+      "last": "2026-09-10"
+    },
+    "4h": {
+      "candles": 1164,
+      "first": "2026-03-01",
+      "last": "2026-09-10"
+    },
+    "1d": {
+      "candles": 984,
+      "first": "2024-01-01",
+      "last": "2026-09-10"
+    }
+  },
+  "engine": "BacktestEngine (Spot 1x long-only, taker fee 10bps, mandatory stop-loss, four-gate pipeline inside every run)",
+  "walkforward": "n_folds=6 per timeframe, train 60% / validation 20% / test 20%, single-combo grid so each fold's test report is the OOS result for the fixed params (fresh 5000 USDT equity per window)",
+  "warmup_bars": 60,
+  "warmup_note": "real bars before each segment are prepended for indicator warm-up; the engine skips them entirely (no trades/equity counted) and they are past data at segment time, so this is not look-ahead",
+  "rows": 65,
+  "goal": "owner target: positive return in >=70% of OOS windows (5/6 at six folds)",
+  "met_70pct": true,
+  "top10": [
+    {
+      "family": "donchian",
+      "timeframe": "1d",
+      "params": {
+        "channel": 15
+      },
+      "consistency_pct": 83.3,
+      "mean_oos_return": 0.00447,
+      "max_drawdown": 0.0044,
+      "trade_count": 19,
+      "folds_ok": 6,
+      "oos_returns": [
+        0.0004,
+        0.01259,
+        0.00822,
+        0.0026,
+        -0.0044,
+        0.00739
+      ],
+      "full_period_return": 0.01198,
+      "full_period_max_drawdown": 0.01693,
+      "full_period_trades": 55
+    },
+    {
+      "family": "rsi",
+      "timeframe": "1d",
+      "params": {
+        "period": 7,
+        "oversold": 30,
+        "overbought": 70,
+        "stop_loss_pct": 0.03,
+        "take_profit_pct": 0.06
+      },
+      "consistency_pct": 83.3,
+      "mean_oos_return": 0.00362,
+      "max_drawdown": 0.00858,
+      "trade_count": 13,
+      "folds_ok": 6,
+      "oos_returns": [
+        0.007,
+        0.00579,
+        0.00579,
+        -0.004,
+        0.00559,
+        0.00156
+      ],
+      "full_period_return": -0.0082,
+      "full_period_max_drawdown": 0.05138,
+      "full_period_trades": 101
+    },
+    {
+      "family": "donchian",
+      "timeframe": "1d",
+      "params": {
+        "channel": 10
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.0041,
+      "max_drawdown": 0.0044,
+      "trade_count": 20,
+      "folds_ok": 6,
+      "oos_returns": [
+        -0.0018,
+        0.01259,
+        0.00822,
+        0.0026,
+        -0.0044,
+        0.00739
+      ],
+      "full_period_return": -0.01095,
+      "full_period_max_drawdown": 0.03083,
+      "full_period_trades": 69
+    },
+    {
+      "family": "donchian",
+      "timeframe": "1d",
+      "params": {
+        "channel": 12
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.0041,
+      "max_drawdown": 0.0044,
+      "trade_count": 20,
+      "folds_ok": 6,
+      "oos_returns": [
+        -0.0018,
+        0.01259,
+        0.00822,
+        0.0026,
+        -0.0044,
+        0.00739
+      ],
+      "full_period_return": -0.00561,
+      "full_period_max_drawdown": 0.02527,
+      "full_period_trades": 63
+    },
+    {
+      "family": "ema",
+      "timeframe": "1d",
+      "params": {
+        "fast": 5,
+        "slow": 20
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.00376,
+      "max_drawdown": 0.0032,
+      "trade_count": 7,
+      "folds_ok": 6,
+      "oos_returns": [
+        0.00579,
+        0.0,
+        0.00579,
+        0.00579,
+        -0.0006,
+        0.00579
+      ],
+      "full_period_return": 0.02348,
+      "full_period_max_drawdown": 0.01462,
+      "full_period_trades": 28
+    },
+    {
+      "family": "donchian",
+      "timeframe": "1d",
+      "params": {
+        "channel": 8
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.00373,
+      "max_drawdown": 0.0044,
+      "trade_count": 21,
+      "folds_ok": 6,
+      "oos_returns": [
+        -0.0018,
+        0.01259,
+        0.00602,
+        0.0026,
+        -0.0044,
+        0.00739
+      ],
+      "full_period_return": -0.01535,
+      "full_period_max_drawdown": 0.03489,
+      "full_period_trades": 71
+    },
+    {
+      "family": "ema",
+      "timeframe": "1d",
+      "params": {
+        "fast": 5,
+        "slow": 20,
+        "volume_filter_bars": 10
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.00333,
+      "max_drawdown": 0.0032,
+      "trade_count": 5,
+      "folds_ok": 6,
+      "oos_returns": [
+        0.00579,
+        0.0,
+        0.0,
+        0.00579,
+        0.0026,
+        0.00579
+      ],
+      "full_period_return": 0.01566,
+      "full_period_max_drawdown": 0.02059,
+      "full_period_trades": 18
+    },
+    {
+      "family": "ema",
+      "timeframe": "1d",
+      "params": {
+        "fast": 5,
+        "slow": 20,
+        "volume_filter_bars": 20
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.00333,
+      "max_drawdown": 0.0032,
+      "trade_count": 5,
+      "folds_ok": 6,
+      "oos_returns": [
+        0.00579,
+        0.0,
+        0.0,
+        0.00579,
+        0.0026,
+        0.00579
+      ],
+      "full_period_return": 0.01306,
+      "full_period_max_drawdown": 0.02071,
+      "full_period_trades": 16
+    },
+    {
+      "family": "donchian",
+      "timeframe": "1d",
+      "params": {
+        "channel": 15,
+        "volume_filter_bars": 10
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.00309,
+      "max_drawdown": 0.00519,
+      "trade_count": 17,
+      "folds_ok": 6,
+      "oos_returns": [
+        -0.0044,
+        0.00694,
+        0.00822,
+        0.0048,
+        -0.0044,
+        0.00739
+      ],
+      "full_period_return": 0.00459,
+      "full_period_max_drawdown": 0.01949,
+      "full_period_trades": 52
+    },
+    {
+      "family": "donchian",
+      "timeframe": "1d",
+      "params": {
+        "channel": 15,
+        "volume_filter_bars": 20
+      },
+      "consistency_pct": 66.7,
+      "mean_oos_return": 0.00309,
+      "max_drawdown": 0.00519,
+      "trade_count": 17,
+      "folds_ok": 6,
+      "oos_returns": [
+        -0.0044,
+        0.00694,
+        0.00822,
+        0.0048,
+        -0.0044,
+        0.00739
+      ],
+      "full_period_return": 0.00459,
+      "full_period_max_drawdown": 0.01949,
+      "full_period_trades": 52
+    }
+  ],
+  "note": "RESEARCH ONLY \u2014 not validated advice, no guarantee. A config reaching >=70% here is still a research candidate: paper trading and out-of-sample-forward checks come next."
+}
