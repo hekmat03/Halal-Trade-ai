@@ -238,3 +238,39 @@ It clears the consistency bar but loses money over the full history, so it is
   next honest steps are paper trading with the same params, then a forward test
   on data that did not exist when the params were chosen. `validated` stays
   `False` in the library either way; no sweep output can change a policy gate.
+
+## Reconciliation with `main` (2026-09-19)
+
+`main` advanced by 102 owner commits after this branch was cut from `5bb269c`
+(the owner rewrote `halaltrade/backtest/engine.py` and
+`halaltrade/backtest/strategies.py`, and added `validation/`,
+`indicators/`, `decision/`, `live/`, `research/mistral_client.py`,
+`zakat.py` and their own `run_walkforward_*.py` scripts). This branch was
+therefore **rebased** onto the current `main` — our two Delivery-6 commits
+replayed on top, no merge commit.
+
+Resolution rule: **the owner's code on `main` is the source of truth. No owner
+module was edited.** Three files conflicted (not one as first assumed):
+
+| Path | Kind | Resolution |
+| --- | --- | --- |
+| `halaltrade/backtest/strategies.py` | owner rewrote the whole file | owner's file kept **verbatim**; the previous "library alias" append block (which re-exported `halaltrade.strategies` names from this old location) is dropped and was not re-inserted |
+| `halaltrade/research/__init__.py` | add/add | owner's file kept **verbatim** (their Mistral analyzer exports). Nothing needed the Delivery-6 package-level re-exports: the library, scripts and tests all import through submodule paths (`halaltrade.research.walkforward`, …) |
+| `tests/test_walkforward.py` | add/add, different subjects | owner's file kept at that path (their tests for `halaltrade.validation.walkforward`); our fold tests moved to `tests/test_research_walkforward.py`, content unchanged |
+
+Nothing else had to be adjusted. `halaltrade/strategies/__init__.py` is
+self-contained (it imports only `marketdata.models` and `models`, plus a lazy
+`research.regime` import for the regime filter), and our research modules
+import `BacktestConfig` / `BacktestEngine` from `halaltrade.backtest`, whose
+public names the owner's rewrite preserved.
+
+Verified after the rebase:
+
+* `git diff --stat origin/main HEAD` → 16 files, 5017 insertions, 0 deletions,
+  every path a Delivery-6 addition (research package, strategy library, sweep
+  script, this doc, 4 test files, sweep results + `meta.json`, one `.gitignore`
+  line for the cached candle JSONL).
+* Full backend suite: **314 passed / 0 failed**, owner's own tests included.
+* Sweep artifact intact: `backend/data/results/walkforward_results.json` — the
+  winner row `donchian 1d channel 15` is positive in **5 of 6** OOS windows
+  (83.3%), +0.447% mean OOS, +1.20% full-history return, as reported above.
