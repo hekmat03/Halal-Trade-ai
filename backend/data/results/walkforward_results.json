@@ -1,0 +1,1734 @@
+[
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 5,
+      "oversold": 25,
+      "overbought": 75
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00099,
+      0.00539,
+      -0.0044,
+      0.0008,
+      0.00039,
+      0.00519
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0010652826747177034,
+    "mean_is_return": -0.00029145110210844596,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 21,
+    "full_return": 0.0008149921996846388,
+    "full_max_drawdown": 0.028930862555137063,
+    "full_trade_count": 126,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 5,
+      "oversold": 30,
+      "overbought": 70
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00195,
+      0.00539,
+      -0.00659,
+      -0.0036,
+      0.00419,
+      0.00285
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.000698177048362868,
+    "mean_is_return": -0.002948560611428244,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 28,
+    "full_return": -0.024648958262776067,
+    "full_max_drawdown": 0.04922139137126437,
+    "full_trade_count": 156,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 5,
+      "oversold": 35,
+      "overbought": 65
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00195,
+      0.00539,
+      -0.00659,
+      -0.0036,
+      0.00199,
+      0.00136
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 8.26832478115042e-05,
+    "mean_is_return": -0.003803349372932129,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 30,
+    "full_return": -0.036970923991821475,
+    "full_max_drawdown": 0.05860986600271452,
+    "full_trade_count": 180,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 7,
+      "oversold": 25,
+      "overbought": 75
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00121,
+      0.0038,
+      -0.0022,
+      -0.0012,
+      -0.0002,
+      0.0036
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0008339181614469452,
+    "mean_is_return": 0.0004905678835768715,
+    "max_drawdown": 0.004381995143521219,
+    "trade_count": 12,
+    "full_return": 0.010519301154822096,
+    "full_max_drawdown": 0.034399653562419814,
+    "full_trade_count": 94,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 7,
+      "oversold": 30,
+      "overbought": 70
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00501,
+      0.0038,
+      -0.0022,
+      -0.0036,
+      0.0036,
+      0.00156
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0013602453946953271,
+    "mean_is_return": -0.00047918398108637734,
+    "max_drawdown": 0.006772355551656775,
+    "trade_count": 16,
+    "full_return": -0.0035312466336672515,
+    "full_max_drawdown": 0.03126221274467676,
+    "full_trade_count": 129,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 7,
+      "oversold": 35,
+      "overbought": 65
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00281,
+      0.0038,
+      -0.00659,
+      -0.0058,
+      -0.003,
+      0.00156
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": -0.0012040879386379553,
+    "mean_is_return": -0.002278268130413198,
+    "max_drawdown": 0.009042612729606147,
+    "trade_count": 23,
+    "full_return": -0.031183218872713768,
+    "full_max_drawdown": 0.05366818115680828,
+    "full_trade_count": 154,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 9,
+      "oversold": 25,
+      "overbought": 75
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      -0.0008,
+      0.0,
+      0.0038
+    ],
+    "consistency_pct": 16.666666666666668,
+    "mean_oos_return": 0.0004993333333333188,
+    "mean_is_return": -0.004517674316049397,
+    "max_drawdown": 0.0045786195601495855,
+    "trade_count": 5,
+    "full_return": -0.022591999999998735,
+    "full_max_drawdown": 0.03691213184691624,
+    "full_trade_count": 73,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 9,
+      "oversold": 30,
+      "overbought": 70
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0038,
+      0.0,
+      -0.0022,
+      -0.0014,
+      0.0,
+      0.0038
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.0006656666666666448,
+    "mean_is_return": -0.0054353527959756925,
+    "max_drawdown": 0.0067575497765054,
+    "trade_count": 10,
+    "full_return": -0.025104070879556094,
+    "full_max_drawdown": 0.045814712067262175,
+    "full_trade_count": 101,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 9,
+      "oversold": 35,
+      "overbought": 65
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0038,
+      0.0,
+      -0.00659,
+      -0.0014,
+      -0.00341,
+      0.0038
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": -0.0006346354867292273,
+    "mean_is_return": -0.005753032947982381,
+    "max_drawdown": 0.007302100882376343,
+    "trade_count": 15,
+    "full_return": -0.05079015179159578,
+    "full_max_drawdown": 0.07374359055402852,
+    "full_trade_count": 140,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 5,
+      "oversold": 30,
+      "overbought": 70,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00195,
+      0.01053,
+      -0.0006,
+      -0.00536,
+      0.00011,
+      0.00465
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0018799411029579766,
+    "mean_is_return": -0.005985596305058576,
+    "max_drawdown": 0.00721230020880707,
+    "trade_count": 21,
+    "full_return": -0.042797431023823995,
+    "full_max_drawdown": 0.07860777362253966,
+    "full_trade_count": 122,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 7,
+      "oversold": 30,
+      "overbought": 70,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.007,
+      0.00579,
+      0.00579,
+      -0.004,
+      0.00559,
+      0.00156
+    ],
+    "consistency_pct": 83.33333333333333,
+    "mean_oos_return": 0.0036247453946954013,
+    "mean_is_return": -0.004206316707557077,
+    "max_drawdown": 0.00857500752044112,
+    "trade_count": 13,
+    "full_return": -0.008201209831852612,
+    "full_max_drawdown": 0.05137583924038324,
+    "full_trade_count": 101,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 9,
+      "oversold": 30,
+      "overbought": 70,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00579,
+      0.0,
+      -0.0032,
+      -0.0008,
+      0.0,
+      0.00579
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.001265166666666725,
+    "mean_is_return": -0.0055749552932071005,
+    "max_drawdown": 0.007335312573921072,
+    "trade_count": 7,
+    "full_return": -0.05538139946844967,
+    "full_max_drawdown": 0.07873707990908406,
+    "full_trade_count": 81,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 7,
+      "oversold": 25,
+      "overbought": 75,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00121,
+      0.00579,
+      0.00579,
+      -0.0038,
+      -0.0002,
+      0.00559
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0023990848281137006,
+    "mean_is_return": -0.00014291101674343735,
+    "max_drawdown": 0.00837592679629078,
+    "trade_count": 10,
+    "full_return": 0.005320427752902105,
+    "full_max_drawdown": 0.04822648465202977,
+    "full_trade_count": 79,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1d",
+    "params": {
+      "period": 7,
+      "oversold": 35,
+      "overbought": 65,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00381,
+      0.00579,
+      -0.0006,
+      -0.004,
+      0.00618,
+      0.00156
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0021240509139095897,
+    "mean_is_return": -0.003613195648945839,
+    "max_drawdown": 0.00857500752044112,
+    "trade_count": 16,
+    "full_return": -0.01807886323966195,
+    "full_max_drawdown": 0.06061578247306404,
+    "full_trade_count": 113,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "4h",
+    "params": {
+      "period": 7,
+      "oversold": 30,
+      "overbought": 70,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00274,
+      -0.00081,
+      -0.01813,
+      -1e-05,
+      0.00261,
+      -0.00113
+    ],
+    "consistency_pct": 16.666666666666668,
+    "mean_oos_return": -0.003368440261655905,
+    "mean_is_return": 0.003479670289965876,
+    "max_drawdown": 0.019181999999999606,
+    "trade_count": 17,
+    "full_return": 0.004116534856130965,
+    "full_max_drawdown": 0.023063630365860906,
+    "full_trade_count": 56,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "4h",
+    "params": {
+      "period": 14,
+      "oversold": 30,
+      "overbought": 70,
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.06
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00014,
+      0.0,
+      -0.01516,
+      0.0,
+      0.0,
+      -0.0002
+    ],
+    "consistency_pct": 16.666666666666668,
+    "mean_oos_return": -0.002536873143886593,
+    "mean_is_return": 0.0034291012030170653,
+    "max_drawdown": 0.016858210623613284,
+    "trade_count": 8,
+    "full_return": 0.007075826600472647,
+    "full_max_drawdown": 0.03084813544996624,
+    "full_trade_count": 30,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 8
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0018,
+      0.01259,
+      0.00602,
+      0.0026,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.003733725629980563,
+    "mean_is_return": -0.004945750479256761,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 21,
+    "full_return": -0.015347508766230204,
+    "full_max_drawdown": 0.03488642818114293,
+    "full_trade_count": 71,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 8,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00659,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002725542325994411,
+    "mean_is_return": -0.0031805838125901573,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 18,
+    "full_return": -0.01214850876623077,
+    "full_max_drawdown": 0.03382444812514912,
+    "full_trade_count": 60,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 8,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00659,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002725542325994411,
+    "mean_is_return": -0.002898166666666414,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 18,
+    "full_return": -0.007752508766230858,
+    "full_max_drawdown": 0.029492491767934274,
+    "full_trade_count": 58,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0018,
+      0.01259,
+      0.00822,
+      0.0026,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.004100058963313889,
+    "mean_is_return": -0.0045794171459234345,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 20,
+    "full_return": -0.01095150876623029,
+    "full_max_drawdown": 0.03082684443752694,
+    "full_trade_count": 69,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 10,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00659,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002725542325994411,
+    "mean_is_return": -0.0031805838125901573,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 18,
+    "full_return": -0.01214850876623077,
+    "full_max_drawdown": 0.03382444812514912,
+    "full_trade_count": 60,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 10,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00659,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002725542325994411,
+    "mean_is_return": -0.002898166666666414,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 18,
+    "full_return": -0.007752508766230858,
+    "full_max_drawdown": 0.029492491767934274,
+    "full_trade_count": 58,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 12
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0018,
+      0.01259,
+      0.00822,
+      0.0026,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.004100058963313889,
+    "mean_is_return": -0.004279583812590135,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 20,
+    "full_return": -0.005606999999996697,
+    "full_max_drawdown": 0.025266989668035405,
+    "full_trade_count": 63,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 12,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00659,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002725542325994411,
+    "mean_is_return": -0.0031805838125901573,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 18,
+    "full_return": -0.008602999999996972,
+    "full_max_drawdown": 0.0303305925201792,
+    "full_trade_count": 58,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 12,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00659,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002725542325994411,
+    "mean_is_return": -0.002898166666666414,
+    "max_drawdown": 0.006593999999999869,
+    "trade_count": 18,
+    "full_return": -0.006404999999997017,
+    "full_max_drawdown": 0.028164614341571775,
+    "full_trade_count": 57,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 15
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0004,
+      0.01259,
+      0.00822,
+      0.0026,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 83.33333333333333,
+    "mean_oos_return": 0.004466392296647215,
+    "mean_is_return": -0.0021321666666664287,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 19,
+    "full_return": 0.011977000000002954,
+    "full_max_drawdown": 0.01693463830726488,
+    "full_trade_count": 55,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 15,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0044,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.003091875659327737,
+    "mean_is_return": -0.001765833333333103,
+    "max_drawdown": 0.00518787518898839,
+    "trade_count": 17,
+    "full_return": 0.004585000000002765,
+    "full_max_drawdown": 0.01949380360746681,
+    "full_trade_count": 52,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "1d",
+    "params": {
+      "channel": 15,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0044,
+      0.00694,
+      0.00822,
+      0.0048,
+      -0.0044,
+      0.00739
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.003091875659327737,
+    "mean_is_return": -0.001765833333333103,
+    "max_drawdown": 0.00518787518898839,
+    "trade_count": 17,
+    "full_return": 0.004585000000002765,
+    "full_max_drawdown": 0.01949380360746681,
+    "full_trade_count": 52,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "4h",
+    "params": {
+      "channel": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0044,
+      0.00091,
+      0.0,
+      0.0026,
+      0.0004,
+      -0.0022
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": -0.00044814185389032,
+    "mean_is_return": 0.00027848420101251285,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 8,
+    "full_return": -0.01248768384203322,
+    "full_max_drawdown": 0.02709649083540276,
+    "full_trade_count": 42,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "4h",
+    "params": {
+      "channel": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0022,
+      0.00182,
+      0.0,
+      0.0026,
+      0.0004,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0004355489915084036,
+    "mean_is_return": -0.0003336666666664924,
+    "max_drawdown": 0.0024272041565573813,
+    "trade_count": 5,
+    "full_return": -0.001568874567740022,
+    "full_max_drawdown": 0.019823710606621834,
+    "full_trade_count": 27,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 5,
+      "slow": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00579,
+      0.0,
+      0.00579,
+      0.00579,
+      -0.0006,
+      0.00579
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0037626666666667305,
+    "mean_is_return": 0.0004931630756581702,
+    "max_drawdown": 0.0031969999999999347,
+    "trade_count": 7,
+    "full_return": 0.023475289424200126,
+    "full_max_drawdown": 0.01462100982590108,
+    "full_trade_count": 28,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 5,
+      "slow": 20,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00579,
+      0.0,
+      0.0,
+      0.00579,
+      0.0026,
+      0.00579
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0033298333333333778,
+    "mean_is_return": 0.0006656666666667663,
+    "max_drawdown": 0.0031969999999999347,
+    "trade_count": 5,
+    "full_return": 0.015659766233767185,
+    "full_max_drawdown": 0.020589368137668814,
+    "full_trade_count": 18,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 5,
+      "slow": 20,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00579,
+      0.0,
+      0.0,
+      0.00579,
+      0.0026,
+      0.00579
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0033298333333333778,
+    "mean_is_return": 0.00023283333333341347,
+    "max_drawdown": 0.0031969999999999347,
+    "trade_count": 5,
+    "full_return": 0.01306276623376707,
+    "full_max_drawdown": 0.02070797572430152,
+    "full_trade_count": 16,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 5,
+      "slow": 20,
+      "regime_filter": "trending-up"
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": 0.0,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": -0.0031969999999999347,
+    "full_max_drawdown": 0.0031969999999999347,
+    "full_trade_count": 1,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 10,
+      "slow": 30
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00579,
+      0.0,
+      0.00579,
+      0.00579,
+      -0.00639,
+      0.00579
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.002797000000000056,
+    "mean_is_return": 0.0016980000000000773,
+    "max_drawdown": 0.009111045925038305,
+    "trade_count": 6,
+    "full_return": 0.025515256082599625,
+    "full_max_drawdown": 0.01084819337371469,
+    "full_trade_count": 18,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 10,
+      "slow": 30,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.00579,
+      0.0,
+      0.00579
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.0019313333333333502,
+    "mean_is_return": 0.0017980000000000472,
+    "max_drawdown": 0.0,
+    "trade_count": 2,
+    "full_return": 0.023341967665009178,
+    "full_max_drawdown": 0.005702825137501968,
+    "full_trade_count": 10,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 10,
+      "slow": 30,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.00579,
+      0.0,
+      0.00579
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.0019313333333333502,
+    "mean_is_return": 0.0017980000000000472,
+    "max_drawdown": 0.0,
+    "trade_count": 2,
+    "full_return": 0.023341967665009178,
+    "full_max_drawdown": 0.005702825137501968,
+    "full_trade_count": 10,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 10,
+      "slow": 30,
+      "regime_filter": "trending-up"
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": 0.0009656666666666751,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": 0.003962967665008727,
+    "full_max_drawdown": 0.0057795462157549165,
+    "full_trade_count": 2,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 20,
+      "slow": 50
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0032,
+      0.0,
+      0.00283,
+      -0.0032,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 16.666666666666668,
+    "mean_oos_return": -0.0005934523314258513,
+    "mean_is_return": -9.999999999996976e-05,
+    "max_drawdown": 0.005072629213236096,
+    "trade_count": 3,
+    "full_return": 0.016182000000000515,
+    "full_max_drawdown": 0.006985399993757652,
+    "full_trade_count": 9,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      -0.0032,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": -0.0005328333333333225,
+    "mean_is_return": 0.0004328333333333527,
+    "max_drawdown": 0.005072629213236096,
+    "trade_count": 1,
+    "full_return": 0.005194000000000233,
+    "full_max_drawdown": 0.006393999999999869,
+    "full_trade_count": 4,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      -0.0032,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": -0.0005328333333333225,
+    "mean_is_return": 0.0004328333333333527,
+    "max_drawdown": 0.005072629213236096,
+    "trade_count": 1,
+    "full_return": 0.008391000000000167,
+    "full_max_drawdown": 0.0031969999999999347,
+    "full_trade_count": 3,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "1d",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "regime_filter": "trending-up"
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.00283,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 16.666666666666668,
+    "mean_oos_return": 0.00047221433524079356,
+    "mean_is_return": -0.0005328333333333225,
+    "max_drawdown": 0.002768376680702929,
+    "trade_count": 1,
+    "full_return": 0.005194000000000233,
+    "full_max_drawdown": 0.007732842426175709,
+    "full_trade_count": 4,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 5,
+      "slow": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00494,
+      0.00355,
+      0.0,
+      0.00579,
+      0.00193,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0010562559871877056,
+    "mean_is_return": 0.0013975237628713027,
+    "max_drawdown": 0.005459117799188425,
+    "trade_count": 6,
+    "full_return": 0.0032159289363738936,
+    "full_max_drawdown": 0.01337388563879175,
+    "full_trade_count": 32,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 5,
+      "slow": 20,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00494,
+      0.00355,
+      0.0,
+      0.00579,
+      0.00193,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0010562559871877056,
+    "mean_is_return": 0.0006422895899700657,
+    "max_drawdown": 0.005459117799188425,
+    "trade_count": 6,
+    "full_return": 0.0021037829850425625,
+    "full_max_drawdown": 0.010389326305077783,
+    "full_trade_count": 21,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 5,
+      "slow": 20,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00494,
+      0.00355,
+      0.0,
+      0.00579,
+      0.00193,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0010562559871877056,
+    "mean_is_return": 0.0006422895899700657,
+    "max_drawdown": 0.005459117799188425,
+    "trade_count": 6,
+    "full_return": 0.005666459449209105,
+    "full_max_drawdown": 0.010370106930845993,
+    "full_trade_count": 19,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 5,
+      "slow": 20,
+      "regime_filter": "trending-up"
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": -0.0004005464599302286,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": -0.0024032787595813718,
+    "full_max_drawdown": 0.0024032787595813718,
+    "full_trade_count": 1,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 10,
+      "slow": 30
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0032,
+      0.00182,
+      0.0,
+      0.00229,
+      0.00184,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.00045771007841467504,
+    "mean_is_return": 0.002121042321830282,
+    "max_drawdown": 0.0034259746772093516,
+    "trade_count": 4,
+    "full_return": -0.005552384968489423,
+    "full_max_drawdown": 0.018872961042892374,
+    "full_trade_count": 23,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 10,
+      "slow": 30,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0032,
+      0.00182,
+      0.0,
+      0.00229,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.00015175076087043632,
+    "mean_is_return": 0.0031259767301642268,
+    "max_drawdown": 0.0034259746772093516,
+    "trade_count": 3,
+    "full_return": 0.009710180216163098,
+    "full_max_drawdown": 0.009390954409423119,
+    "full_trade_count": 12,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 10,
+      "slow": 30,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0032,
+      0.00182,
+      0.0,
+      0.00229,
+      0.00184,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.00045771007841467504,
+    "mean_is_return": 0.0026435830574358383,
+    "max_drawdown": 0.0034259746772093516,
+    "trade_count": 4,
+    "full_return": 0.0066845945618595574,
+    "full_max_drawdown": 0.012359303720034727,
+    "full_trade_count": 14,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 10,
+      "slow": 30,
+      "regime_filter": "trending-up"
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0032,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": -0.0005328333333333225,
+    "mean_is_return": -0.0005328333333333225,
+    "max_drawdown": 0.0034259746772093516,
+    "trade_count": 1,
+    "full_return": -0.008902402315153086,
+    "full_max_drawdown": 0.01015034477657784,
+    "full_trade_count": 3,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 20,
+      "slow": 50
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0021,
+      0.0,
+      0.00136,
+      0.0004,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0006419875605964383,
+    "mean_is_return": 0.0016274767301642289,
+    "max_drawdown": 0.00205384142253526,
+    "trade_count": 3,
+    "full_return": 0.01289525621851535,
+    "full_max_drawdown": 0.010330595115227617,
+    "full_trade_count": 10,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "volume_filter_bars": 10
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": 0.0006618100634975538,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": 0.0026820710806438,
+    "full_max_drawdown": 0.01377333096719214,
+    "full_trade_count": 7,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "volume_filter_bars": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": 0.0006618100634975538,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": 0.0026820710806438,
+    "full_max_drawdown": 0.01377333096719214,
+    "full_trade_count": 7,
+    "best_params": null
+  },
+  {
+    "family": "ema",
+    "timeframe": "4h",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "regime_filter": "trending-up"
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.00136,
+      0.0004,
+      0.0
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.0002927105698810313,
+    "mean_is_return": 0.001398500000000028,
+    "max_drawdown": 0.00205384142253526,
+    "trade_count": 2,
+    "full_return": 0.011288265125123872,
+    "full_max_drawdown": 0.00586208345872141,
+    "full_trade_count": 6,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "4h",
+    "params": {
+      "fast": 5,
+      "slow": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0022,
+      0.0038,
+      -0.00164,
+      0.0038,
+      0.00193,
+      0.0
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0009463759678645147,
+    "mean_is_return": 0.0009070588272019147,
+    "max_drawdown": 0.0021979999999999565,
+    "trade_count": 5,
+    "full_return": -0.0034685071290274207,
+    "full_max_drawdown": 0.018951887504911162,
+    "full_trade_count": 31,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "4h",
+    "params": {
+      "fast": 10,
+      "slow": 30
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00017,
+      0.00193,
+      0.0,
+      0.0038,
+      0.00152,
+      0.0
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": 0.0012349941759004044,
+    "mean_is_return": -0.0004,
+    "max_drawdown": 0.0035010303754420677,
+    "trade_count": 4,
+    "full_return": -0.003732606628529902,
+    "full_max_drawdown": 0.015423032616246276,
+    "full_trade_count": 23,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "4h",
+    "params": {
+      "fast": 20,
+      "slow": 50
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.00213,
+      0.0,
+      0.0038,
+      0.0004,
+      -0.0022
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0006881214996754655,
+    "mean_is_return": 0.001562492455484668,
+    "max_drawdown": 0.0021979999999999565,
+    "trade_count": 4,
+    "full_return": 0.010561253069390477,
+    "full_max_drawdown": 0.004195120589334753,
+    "full_trade_count": 11,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "4h",
+    "params": {
+      "fast": 50,
+      "slow": 200
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": 0.0,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": -0.0027979999999997746,
+    "full_max_drawdown": 0.007623887577704666,
+    "full_trade_count": 4,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "1d",
+    "params": {
+      "fast": 5,
+      "slow": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0044,
+      0.0,
+      0.0038,
+      0.0038,
+      -0.0022,
+      0.0016
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0004326666666666823,
+    "mean_is_return": -0.0028137504792570323,
+    "max_drawdown": 0.004395999999999913,
+    "trade_count": 7,
+    "full_return": -0.007597999999999593,
+    "full_max_drawdown": 0.012608615130565262,
+    "full_trade_count": 28,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "1d",
+    "params": {
+      "fast": 10,
+      "slow": 30
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0038,
+      0.0,
+      0.0038,
+      -0.0044,
+      -0.0022,
+      0.0038
+    ],
+    "consistency_pct": 50.0,
+    "mean_oos_return": 0.0007989999999999781,
+    "mean_is_return": -0.0012989999999999783,
+    "max_drawdown": 0.005853783145028692,
+    "trade_count": 6,
+    "full_return": -0.007995999999999913,
+    "full_max_drawdown": 0.02139304839264267,
+    "full_trade_count": 20,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "1d",
+    "params": {
+      "fast": 20,
+      "slow": 50
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.0022,
+      0.0,
+      0.0038,
+      0.0038,
+      -0.0022,
+      0.0
+    ],
+    "consistency_pct": 33.333333333333336,
+    "mean_oos_return": 0.0005326666666666521,
+    "mean_is_return": 0.0001663333333333563,
+    "max_drawdown": 0.002308249762170101,
+    "trade_count": 4,
+    "full_return": 0.005792000000000007,
+    "full_max_drawdown": 0.006513325944846995,
+    "full_trade_count": 11,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "1d",
+    "params": {
+      "fast": 50,
+      "slow": 200
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": 0.0,
+    "mean_is_return": 0.0,
+    "max_drawdown": 0.0,
+    "trade_count": 0,
+    "full_return": -0.0006,
+    "full_max_drawdown": 0.004379375889124795,
+    "full_trade_count": 3,
+    "best_params": null
+  },
+  {
+    "family": "sma",
+    "timeframe": "1h",
+    "params": {
+      "fast": 5,
+      "slow": 20
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      -0.00246,
+      0.00112,
+      -0.00361,
+      -0.00211,
+      -0.00078,
+      -0.00139
+    ],
+    "consistency_pct": 16.666666666666668,
+    "mean_oos_return": -0.0015395536407947173,
+    "mean_is_return": 0.0029845907943222907,
+    "max_drawdown": 0.004218005550138269,
+    "trade_count": 28,
+    "full_return": -0.008943178441591771,
+    "full_max_drawdown": 0.031953867426596116,
+    "full_trade_count": 147,
+    "best_params": null
+  },
+  {
+    "family": "donchian",
+    "timeframe": "4h",
+    "params": {
+      "channel": 55
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.0,
+      -0.0022,
+      0.0,
+      -0.0044,
+      0.0,
+      0.0
+    ],
+    "consistency_pct": 0.0,
+    "mean_oos_return": -0.0010989999999999782,
+    "mean_is_return": -0.00010033333333321947,
+    "max_drawdown": 0.005990900835379048,
+    "trade_count": 3,
+    "full_return": -0.011591999999999098,
+    "full_max_drawdown": 0.02186269618111219,
+    "full_trade_count": 18,
+    "best_params": null
+  },
+  {
+    "family": "rsi",
+    "timeframe": "1h",
+    "params": {
+      "period": 14,
+      "oversold": 30,
+      "overbought": 70
+    },
+    "folds_ok": 6,
+    "oos_returns": [
+      0.00059,
+      0.00176,
+      -0.01219,
+      0.00422,
+      0.00302,
+      -0.00157
+    ],
+    "consistency_pct": 66.66666666666667,
+    "mean_oos_return": -0.0006944749224746072,
+    "mean_is_return": 0.0012185285468527581,
+    "max_drawdown": 0.017942717642831885,
+    "trade_count": 25,
+    "full_return": -0.0011512898148383101,
+    "full_max_drawdown": 0.027028471271957927,
+    "full_trade_count": 96,
+    "best_params": null
+  }
+]
