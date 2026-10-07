@@ -49,6 +49,18 @@ EXTENDED_EVIDENCE = dict(
     extended_paper_profit_factor=1.2,
     extended_paper_max_drawdown=0.10,
 )
+# LiveReadinessCheck (an owner module, reused verbatim and never re-implemented)
+# also requires the two explicit human acknowledgements. A user who INTENDS to
+# trade compliantly supplies them; tests that deliberately exercise a refusal
+# pass evidence without them.
+#
+# The remaining readiness inputs (user_enabled_live, system_healthy,
+# api_key_restricted) are derived from Settings by the machine, and
+# api_key_restricted/system_healthy are True by default.
+READINESS_AFFIRMATIONS = dict(
+    user_confirmed_risk=True,
+    user_confirmed_shariah=True,
+)
 SMALL_LIVE_EVIDENCE = dict(
     small_live_days=31.0,
     small_live_trades=25,
@@ -93,8 +105,17 @@ def fresh_machine(*, settings: Settings | None = None, notifier=None, store=None
     )
 
 
-async def walk_to_stage(machine: ProgressionMachine, stage: ProgressionStage) -> None:
-    """Drive the machine to ``stage`` through the public two-step API."""
+async def walk_to_stage(
+    machine: ProgressionMachine,
+    stage: ProgressionStage,
+    *,
+    affirm_readiness: bool = True,
+) -> None:
+    """Drive the machine to ``stage`` through the public two-step API.
+
+    ``affirm_readiness=False`` keeps the human acknowledgements unset, for tests
+    that deliberately exercise LiveReadinessCheck refusing a transition.
+    """
     plan = [
         (ProgressionStage.PAPER, BACKTEST_EVIDENCE),
         (ProgressionStage.EXTENDED_PAPER_30D, PAPER_EVIDENCE),
@@ -103,8 +124,11 @@ async def walk_to_stage(machine: ProgressionMachine, stage: ProgressionStage) ->
     ]
     for target, evidence in plan:
         clip = 25.0 if target is ProgressionStage.SCALE else None
+        updates = dict(evidence)
+        if affirm_readiness:
+            updates.update(READINESS_AFFIRMATIONS)
         request = await machine.request_transition(
-            target, evidence_updates=evidence, clip_usdt=clip
+            target, evidence_updates=updates, clip_usdt=clip
         )
         assert request.status == "AWAITING_CONFIRMATION", request.failed
         applied = await machine.confirm_transition(
@@ -220,13 +244,19 @@ async def test_small_live_refused_when_live_readiness_not_ready() -> None:
     assert result.status == "REFUSED"
     # LiveReadinessCheck's own reason strings are surfaced verbatim (reuse, not re-implementation)
     assert any("user has NOT explicitly enabled live mode" in reason for reason in result.failed)
-    assert any("API key withdrawal permission" in reason for reason in result.failed)
+    # Settings.api_key_restricted is always True (the system never allows
+    # withdrawals), so LiveReadinessCheck reports the restriction on the PASSED
+    # side; its exact string is asserted verbatim here.
+    assert any("API key withdrawal permission is restricted" in reason for reason in result.passed)
 
 
 @pytest.mark.asyncio
 async def test_small_live_requires_the_two_human_acknowledgements() -> None:
     machine = fresh_machine()
-    await walk_to_stage(machine, ProgressionStage.EXTENDED_PAPER_30D)
+    # deliberately walk without the acknowledgements so SMALL_LIVE must refuse
+    await walk_to_stage(
+        machine, ProgressionStage.EXTENDED_PAPER_30D, affirm_readiness=False
+    )
     result = await machine.request_transition(
         ProgressionStage.SMALL_LIVE, evidence_updates=EXTENDED_EVIDENCE
     )
@@ -315,11 +345,17 @@ async def test_live_enable_refused_before_small_live_stage() -> None:
 
 @pytest.mark.asyncio
 async def test_live_enable_refused_when_readiness_fails() -> None:
-    machine = fresh_machine(settings=Settings(trading_mode="paper", live_enabled=False))
+    # Reaching SMALL_LIVE itself required live readiness, so readiness can only
+    # fail at this point if the user turns live mode back off (or a restart
+    # reloads Settings) afterwards: the live-enable request must re-check
+    # readiness from the CURRENT settings and refuse.
+    machine = fresh_machine()
     await walk_to_stage(machine, ProgressionStage.SMALL_LIVE)
+    machine.settings = Settings(trading_mode="paper", live_enabled=False)
     result = await machine.request_live_enable()
     assert result.status == "REFUSED"
     assert any("user has NOT explicitly enabled live mode" in reason for reason in result.failed)
+    assert machine.state.live_enabled is False
 
 
 @pytest.mark.asyncio
