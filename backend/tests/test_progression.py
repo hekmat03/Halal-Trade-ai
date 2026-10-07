@@ -7,6 +7,7 @@ default = BACKTEST / live off, and notifications never breaking the flow.
 """
 from __future__ import annotations
 
+import tempfile
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -472,8 +473,11 @@ async def test_kill_switch_notification_never_raises() -> None:
 
 # --------------------------------------------------------------------------- API
 def api_client(**settings_overrides):
+    # A file-backed SQLite DB: TestClient runs the app in a worker thread, and an
+    # in-memory DB would be a different database on that thread.
     settings = Settings(trading_mode="paper", live_enabled=False, **settings_overrides)
-    session_factory = create_session(make_engine("sqlite://"))
+    db_path = f"{tempfile.mkdtemp()}/progression_api.db"
+    session_factory = create_session(make_engine(f"sqlite:///{db_path}"))
     app = create_app(settings=settings, session_factory=session_factory)
     return TestClient(app), session_factory
 
