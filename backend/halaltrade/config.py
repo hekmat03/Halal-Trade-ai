@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     api_key_restricted: bool = True
     # Credential/system health gate; False -> Security gate rejects and STOPS.
     system_healthy: bool = True
+    # Delivery 7 (live-safety progression): require an explicit user confirmation
+    # token plus a user-supplied size for EVERY trade. Default False only to
+    # preserve the pre-existing paper-only /trade contract; every live-capable
+    # path requires confirmation regardless of this flag.
+    require_trade_confirmation: bool = False
     # --- Risk Policy (hard user-configurable caps) --------------------------------
     max_position_size: float = 500.0      # max single-position notional (USDT)
     max_exposure: float = 2000.0          # max total exposure (USDT)

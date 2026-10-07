@@ -201,6 +201,22 @@ class SystemEvent(Base):
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     healthy: Mapped[bool] = mapped_column(Boolean, default=True)
     detail: Mapped[str | None] = mapped_column(Text, default=None)
+class ProgressionEvent(Base):
+    """Delivery 7: append-only log of the live-safety progression.
+
+    Same persisted-state pattern as ``emergency_events`` (the kill switch): the
+    *latest* row wins, so the current stage / live-authorization flag and the
+    recorded evidence survive a restart. An empty table means BACKTEST with live
+    disabled. ``detail`` carries a JSON snapshot of
+    {stage, live_enabled, clip_usdt, evidence}.
+    """
+    __tablename__ = "progression_events"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    timestamp: Mapped[str] = mapped_column(String(32), default=utc_str, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    stage: Mapped[str] = mapped_column(String(32), index=True)
+    live_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    detail: Mapped[str | None] = mapped_column(Text, default=None)
 
 
 # ------------------------------------------------------------------------------------

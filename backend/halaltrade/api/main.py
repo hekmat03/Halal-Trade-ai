@@ -44,10 +44,22 @@ from ..marketdata import (
 from ..marketdata.models import Candle
 from ..models import InstrumentType, Side, Signal
 from ..paper import PaperBroker
+from ..progression import DbProgressionStore, ProgressionMachine
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["app", "create_app", "TradeRequest", "TradeResponse", "KillRequest"]
+__all__ = [
+    "app",
+    "create_app",
+    "ConfirmRequest",
+    "EvidenceRequest",
+    "KillRequest",
+    "LiveToggleRequest",
+    "TradeAuthorizationRequest",
+    "TradeRequest",
+    "TradeResponse",
+    "TransitionRequest",
+]
 
 
 # --------------------------------------------------------------------------------------
@@ -69,6 +81,12 @@ class TradeRequest(BaseModel):
     client_order_id: Optional[str] = None
 
 
+    # Delivery 7: single-use token from POST /trade/authorize, bound to this exact
+    # clientOrderId and the user-supplied size. Optional here so the pre-existing
+    # paper contract keeps working; it is REQUIRED whenever
+    # Settings.require_trade_confirmation is set or live is authorized.
+    human_confirmation_token: Optional[str] = None
+
 class TradeResponse(BaseModel):
     """Outcome of a /trade submission. ``executed`` is the single source of truth."""
 
@@ -87,6 +105,35 @@ class TradeResponse(BaseModel):
 class KillRequest(BaseModel):
     enabled: bool = True
 
+class TransitionRequest(BaseModel):
+    """Ask to enter a progression stage (evidence is checked, then confirmed)."""
+    target_stage: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    clip_usdt: Optional[float] = None
+
+class ConfirmRequest(BaseModel):
+    """Confirm a pending progression / live-enable request with its token."""
+    token: str
+    purpose: str = "transition"
+    clip_usdt: Optional[float] = None
+    human_authorized_scale: bool = False
+
+class EvidenceRequest(BaseModel):
+    """Record evidence about work already done (backtest/paper results...)."""
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+class LiveToggleRequest(BaseModel):
+    """Ask to authorize or withdraw live authorization."""
+    enabled: bool = True
+    reason: str = ""
+
+class TradeAuthorizationRequest(BaseModel):
+    """Ask for a single-use confirmation token for ONE exact, user-sized trade."""
+    side: Side = Side.BUY
+    size: float = Field(gt=0, description="Exact USDT notional the USER wants to deploy.")
+    client_order_id: Optional[str] = None
+    symbol: str = "BTCUSDT"
+
 
 # --------------------------------------------------------------------------------------
 # Factory
@@ -100,6 +147,7 @@ def create_app(
     session_factory: Callable[[], Any] | None = None,
     starting_usdt: float = 5000.0,
     now: Callable[[], datetime] | None = None,
+    progression_notifier: Any | None = None,
 ) -> FastAPI:
     settings = settings or Settings(trading_mode="paper", live_enabled=False)
 
@@ -120,6 +168,15 @@ def create_app(
             now=now,
         )
         app.state.kill_switch = _restore_kill_switch(sf)
+        # Delivery 7: the live-trading safety progression. An empty DB means
+        # BACKTEST with live OFF; it coordinates evidence + human confirmations
+        # and never executes anything.
+        app.state.progression = ProgressionMachine(
+            settings=settings,
+            store=DbProgressionStore(sf),
+            notifier=progression_notifier,
+            clock=now,
+        )
         logger.info(
             "HalalTrade API up: mode=%s live_enabled=%s kill_switch=%s",
             settings.trading_mode, settings.live_enabled, app.state.kill_switch,
@@ -196,6 +253,30 @@ def create_app(
                 order_id=req.client_order_id or "",
             )
 
+        progression: ProgressionMachine = state.progression
+        token = req.human_confirmation_token
+        confirmation_required = bool(
+            getattr(state.settings, "require_trade_confirmation", False)
+        ) or progression.live_authorized()
+        if token is not None or confirmation_required:
+            authorization = progression.confirmation_gate().authorize(
+                client_order_id=req.client_order_id or "",
+                side=req.side.value,
+                size=req.amount,
+                token=token or "",
+                symbol=req.symbol,
+            )
+            if not authorization.authorized:
+                return TradeResponse(
+                    executed=False,
+                    reason=(
+                        "NO TRADE: explicit human confirmation required — "
+                        + "; ".join(authorization.failed)
+                    ),
+                    decision="NO_TRADE",
+                    kill_switch_on=state.kill_switch,
+                    order_id=req.client_order_id or "",
+                )
         signal = Signal(
             side=req.side,
             symbol=req.symbol,
@@ -296,6 +377,11 @@ def create_app(
         finally:
             session.close()
         logger.warning("kill switch = %s", state.kill_switch)
+        # Delivery 7: a kill-switch event always withdraws live authorization (the
+        # safe direction only, never the reverse) and always notifies, best effort.
+        if req.enabled:
+            await state.progression.disable_live(reason="kill switch engaged", notify=False)
+        await state.progression.notify_kill_switch(enabled=req.enabled, detail=detail)
         return {"kill_switch": req.enabled, "detail": detail, "trading_halted": req.enabled}
 
     # ------------------------------------------------------------------ audit
@@ -354,6 +440,97 @@ def create_app(
             }
         finally:
             session.close()
+
+    # ------------------------------------------------- deliver 7: progression
+    @app.get("/progression")
+    async def progression_view(request: Request) -> dict[str, Any]:
+        """Current stage, evidence checklist, limits and pending confirmations.
+
+        Read-only. ``live_execution_implemented`` is always False in this build.
+        """
+        machine: ProgressionMachine = request.app.state.progression
+        return machine.snapshot()
+
+    @app.post("/progression/evidence")
+    async def progression_evidence(req: EvidenceRequest, request: Request) -> dict[str, Any]:
+        """Record evidence about work already done (never an opinion or a guess)."""
+        machine: ProgressionMachine = request.app.state.progression
+        try:
+            evidence = machine.record_evidence(**(req.evidence or {}))
+        except ValueError as exc:
+            return {"ok": False, "status": "REFUSED", "failed": [str(exc)]}
+        return {"ok": True, "status": "RECORDED", "evidence": evidence.to_dict()}
+
+    @app.post("/progression/transition")
+    async def progression_transition(req: TransitionRequest, request: Request) -> dict[str, Any]:
+        """Request entry into the next stage.
+
+        Answers either REFUSED with a reason list, or AWAITING_CONFIRMATION with
+        a single-use token the user must confirm (POST /progression/confirm).
+        """
+        machine: ProgressionMachine = request.app.state.progression
+        result = await machine.request_transition(
+            req.target_stage, evidence_updates=req.evidence, clip_usdt=req.clip_usdt
+        )
+        logger.info("progression transition -> %s (%s)", req.target_stage, result.status)
+        return result.to_dict()
+
+    @app.post("/progression/confirm")
+    async def progression_confirm(req: ConfirmRequest, request: Request) -> dict[str, Any]:
+        """Apply a pending progression transition / live authorization."""
+        machine: ProgressionMachine = request.app.state.progression
+        if req.purpose == "live_enable":
+            result = await machine.confirm_live_enable(req.token)
+        else:
+            result = await machine.confirm_transition(
+                req.token,
+                clip_usdt=req.clip_usdt,
+                human_authorized_scale=req.human_authorized_scale,
+            )
+        return result.to_dict()
+
+    @app.post("/progression/live")
+    async def progression_live(req: LiveToggleRequest, request: Request) -> dict[str, Any]:
+        """Authorize (two-step) or withdraw live authorization.
+
+        ``enabled=true`` can only return REFUSED-with-reasons or
+        AWAITING_CONFIRMATION — it never turns live on by itself and never places
+        an order. ``enabled=false`` is always allowed (the safe direction).
+        """
+        machine: ProgressionMachine = request.app.state.progression
+        if not req.enabled:
+            result = await machine.disable_live(reason=req.reason or "user request")
+        else:
+            result = await machine.request_live_enable()
+        logger.warning("progression live toggle enabled=%s -> %s", req.enabled, result.status)
+        return result.to_dict()
+
+    @app.post("/trade/authorize")
+    async def trade_authorize(req: TradeAuthorizationRequest, request: Request) -> dict[str, Any]:
+        """Issue a single-use confirmation token for one exact, user-sized trade.
+
+        The size comes from the request body only: the agent never chooses it.
+        """
+        state = request.app.state
+        machine: ProgressionMachine = state.progression
+        if state.kill_switch:
+            return {
+                "authorized": False,
+                "status": "REFUSED",
+                "token": "",
+                "client_order_id": req.client_order_id or "",
+                "size": None,
+                "failed": ["emergency kill switch is ON — trading halted"],
+                "passed": [],
+            }
+        authorization = machine.confirmation_gate().request_authorization(
+            client_order_id=req.client_order_id or f"coid-{uuid.uuid4().hex[:12]}",
+            side=req.side.value,
+            size=req.size,
+            symbol=req.symbol,
+        )
+        logger.info("trade authorization request -> %s", authorization.status)
+        return authorization.to_dict()
 
     return app
 
