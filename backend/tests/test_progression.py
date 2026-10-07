@@ -18,6 +18,7 @@ from halaltrade.config import Settings
 from halaltrade.db import create_session, make_engine
 from halaltrade.notifications.telegram import AlertType
 from halaltrade.progression import (
+    ProgressionNotifier,
     ConfirmationPurpose,
     ConfirmationStore,
     DbProgressionStore,
@@ -86,7 +87,7 @@ def live_ready_settings(**overrides) -> Settings:
 def fresh_machine(*, settings: Settings | None = None, notifier=None, store=None, limits=None):
     return ProgressionMachine(
         settings=settings or live_ready_settings(),
-        notifier=notifier if notifier is not None else RecordingNotifier(),
+        notifier=ProgressionNotifier(notifier if notifier is not None else RecordingNotifier()),
         store=store if store is not None else NullProgressionStore(),
         limits=limits,
     )
@@ -444,7 +445,7 @@ def test_trade_confirmation_must_match_size_and_order_id() -> None:
 @pytest.mark.asyncio
 async def test_notification_failure_never_breaks_a_transition() -> None:
     machine = fresh_machine(notifier=None)
-    machine.notifier = RecordingNotifier(boom=True)
+    machine.notifier = ProgressionNotifier(RecordingNotifier(boom=True))
     request = await machine.request_transition(ProgressionStage.PAPER, evidence_updates=BACKTEST_EVIDENCE)
     assert request.status == "AWAITING_CONFIRMATION"
     applied = await machine.confirm_transition(request.token)
@@ -467,7 +468,7 @@ async def test_transitions_and_refusals_are_notified() -> None:
 @pytest.mark.asyncio
 async def test_kill_switch_notification_never_raises() -> None:
     machine = fresh_machine()
-    machine.notifier = RecordingNotifier(boom=True)
+    machine.notifier = ProgressionNotifier(RecordingNotifier(boom=True))
     assert await machine.notify_kill_switch(enabled=True, detail="test") is False
 
 
