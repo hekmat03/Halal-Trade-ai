@@ -77,6 +77,32 @@ class Settings(BaseSettings):
     mistral_max_tokens: int = 1024
     mistral_timeout_seconds: float = 10.0
     mistral_rate_limit_per_minute: int = 10
+    # --- Paper-trading run (Delivery 8; defaults are the documented run config) ----
+    # Simulated money only. Nothing here enables live trading.
+    paper_symbol: str = "BTCUSDT"
+    paper_starting_usdt: float = 1000.0     # simulated starting balance (USDT)
+    paper_strategy: str = "donchian_1d"     # strategies.get_strategy() registry name
+    paper_timeframe: str = "1d"             # candle timeframe for the paper clock
+    paper_trade_amount_usdt: float = 100.0  # the owner's explicit size per entry
+    paper_stop_loss_pct: float = 0.02       # mandatory stop if a signal carries none
+    paper_poll_seconds: float = 3600.0      # how often the run re-reads the market
+    # A closed bar older than this many bar-durations is refused (no trade).
+    paper_candle_max_age_bars: float = 2.0
+    # Report schedule (UTC). Weekly default: Sunday 12:00.
+    paper_daily_report_utc: str = "18:00"
+    paper_weekly_report_utc: str = "12:00"
+    paper_weekly_report_day: str = "SUN"
+    # --- Telegram notifications (ADDITIVE, all OFF by default) --------------------
+    # Notifications only fire when telegram_enabled AND a bot token AND a chat_id
+    # are set. Missing configuration is a logged warning, never a crash.
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_alert_daily_pnl: bool = False
+    telegram_alert_strategy_change: bool = False
+    telegram_alert_emergency_stop: bool = False
+    telegram_alert_risk_rejection: bool = False
+    telegram_alert_system_error: bool = False
     # ------------------------------------------------------------------------------
     def requires_binance_credentials(self) -> bool:
         """Whether this mode needs real, valid Binance credentials to trade."""
