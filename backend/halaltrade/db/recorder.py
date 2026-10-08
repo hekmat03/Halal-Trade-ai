@@ -28,6 +28,7 @@ from .models import (
     BacktestRun,
     Order,
     Position,
+    ProgressionEvent,
     RiskEvent,
     ShariahCheck,
     SignalRecord,
@@ -271,3 +272,38 @@ def record_pipeline(session: Session, signal: Signal, result: PipelineResult) ->
             )
 
     session.commit()
+
+
+def record_progression_event(
+    session: Session,
+    *,
+    event_type: str,
+    stage: str,
+    live_enabled: bool = False,
+    snapshot: dict | None = None,
+    detail: str = "",
+) -> ProgressionEvent:
+    """Persist one live-safety progression event (Delivery 7).
+
+    Mirrors the kill-switch pattern: the row is both the audit trail entry and
+    the state snapshot the machine reloads on the next start ("logs remember").
+    """
+    event = ProgressionEvent(
+        event_type=event_type,
+        stage=stage,
+        live_enabled=live_enabled,
+        detail=json.dumps(
+            {"stage": stage, "live_enabled": live_enabled, **(snapshot or {}), "note": detail},
+            default=_json_default,
+        ),
+    )
+    session.add(event)
+    session.add(
+        AuditLog(
+            event_type=f"PROGRESSION_{event_type}",
+            passed=live_enabled,
+            detail=f"stage={stage} {detail}".strip(),
+        )
+    )
+    session.commit()
+    return event
