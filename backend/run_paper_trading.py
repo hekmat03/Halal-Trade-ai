@@ -41,6 +41,7 @@ import sys
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, time as dtime, timedelta, timezone
+from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -207,6 +208,48 @@ def select_live_rest_base(probes: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
+def step_aligned_amount(
+    amount: float,
+    price: float,
+    step: float,
+) -> Optional[tuple[float, float]]:
+    """Round a USDT amount DOWN so the derived quantity is LOT_SIZE-aligned.
+
+    The owner sizes every order in USDT; Binance (and the repo's
+    ``halaltrade.orders.validation`` pre-submission check) requires the
+    *derived* quantity (``amount / price``) to be an exact multiple of the
+    LOT_SIZE step. Not every USDT amount lands on a step boundary at an
+    arbitrary BTC price, so the run quantizes to the largest aligned quantity
+    that does **not exceed** the user's amount — size is only ever rounded
+    down, never up, so the user's cap is never breached.
+
+    Returns ``(quantity, aligned_amount_usdt)``, or ``None`` when the amount
+    cannot be aligned (bad inputs, or the aligned amount would be zero/notional
+    below the minimum) — in that case the caller keeps the raw user amount and
+    lets the engine's own validation refuse the order with its own reason.
+    """
+    try:
+        amount = float(amount)
+        price = float(price)
+        step = float(step or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0 or price <= 0 or step <= 0:
+        return None
+    amount_d = Decimal(str(amount))
+    price_d = Decimal(str(price))
+    step_d = Decimal(str(step))
+    quantity = (amount_d / price_d / step_d).to_integral_value(
+        rounding=ROUND_DOWN
+    ) * step_d
+    if quantity <= 0:
+        return None
+    aligned = float((quantity * price_d).quantize(Decimal("0.00000001")))
+    if aligned <= 0:
+        return None
+    return float(quantity), aligned
+
+
 def prepare_signal(
     signal: Signal,
     *,
@@ -216,6 +259,8 @@ def prepare_signal(
     trade_amount: float,
     stop_loss_pct: float,
     timeframe: str = "1d",
+    qty_step: float | None = None,
+    min_notional: float | None = None,
 ) -> Signal:
     """Stamp the owner's explicit size, a mandatory stop and a unique id.
 
@@ -224,10 +269,22 @@ def prepare_signal(
     stop-loss, so both are always present here. SELL signals from library
     strategies already carry ``amount`` + ``stop_loss``; anything missing is
     filled in from the run configuration (never silently zero).
+
+    ``qty_step`` (LOT_SIZE) lets the run submit a step-aligned size: the
+    amount is rounded **down** to the nearest aligned quantity so the engine's
+    pre-submission validation accepts it. The user's requested amount is always
+    recorded in ``metadata`` so the rounding is visible and never silent.
     """
     if signal.side == Side.HOLD:
         return signal
     amount = signal.amount if signal.amount else float(trade_amount)
+    aligned = step_aligned_amount(amount, price, qty_step) if qty_step else None
+    if aligned is not None and (
+        min_notional is None or aligned[1] >= float(min_notional)
+    ):
+        quantity, amount = aligned
+    else:
+        quantity = None
     stop = signal.stop_loss if signal.stop_loss else price * (1.0 - stop_loss_pct)
     client_order_id = signal.client_order_id or (
         f"paper-{symbol}-{bar_timestamp.strftime('%Y%m%d%H%M')}-{uuid.uuid4().hex[:8]}"
@@ -245,6 +302,9 @@ def prepare_signal(
                 "paper_run": True,
                 "timeframe": timeframe,
                 "size_source": "user_configured" if not signal.amount else "strategy",
+                "requested_amount_usdt": float(signal.amount or trade_amount),
+                "aligned_quantity": quantity,
+                "qty_step": float(qty_step) if qty_step else None,
             },
         }
     )
@@ -646,6 +706,8 @@ class PaperRun:
             trade_amount=self.trade_amount,
             stop_loss_pct=self.stop_loss_pct,
             timeframe=self.timeframe,
+            qty_step=getattr(self.settings, "qty_step", None),
+            min_notional=getattr(self.settings, "min_notional", None),
         )
         result = await self.broker.execute(prepared)
         self._record_pipeline(prepared, result)
