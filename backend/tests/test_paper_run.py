@@ -16,6 +16,7 @@ Everything here runs fully offline.
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -56,6 +57,45 @@ from run_paper_trading import (
 )
 
 NOW = datetime(2026, 10, 8, 4, 30, tzinfo=timezone.utc)
+
+# --- Environment isolation (test-only) -------------------------------------
+# ``Settings`` is configured with ``env_prefix="HALAL_"`` and ``env_file=".env"``,
+# so its values depend on the ambient environment: a developer's local
+# ``backend/.env`` (the live paper-run config sets ``HALAL_TELEGRAM_ENABLED=true``
+# plus a real bot token/chat id) or exported ``HALAL_*`` shell variables leak into
+# these tests. That is what made the "Telegram defaults are OFF" assertions fail in
+# a working tree that carries a live ``.env``.
+#
+# Fix (tests only; production code is untouched): every ``Settings`` built in this
+# module pins the Telegram block explicitly. pydantic-settings ranks init kwargs
+# above env vars and above ``.env``, so such an object is hermetic regardless of
+# what the ambient environment holds.
+TELEGRAM_OFF = dict(
+    telegram_enabled=False,
+    telegram_bot_token="",
+    telegram_chat_id="",
+    telegram_alert_daily_pnl=False,
+    telegram_alert_strategy_change=False,
+    telegram_alert_emergency_stop=False,
+    telegram_alert_risk_rejection=False,
+    telegram_alert_system_error=False,
+)
+
+
+@pytest.fixture
+def hermetic_env(monkeypatch):
+    """Strip ambient ``HALAL_*`` vars and ignore any local ``.env`` file.
+
+    Lets a test assert the *shipped* defaults of :class:`Settings` without the
+    local ``.env`` / shell environment interfering. ``monkeypatch`` restores the
+    environment afterwards.
+    """
+    for key in [k for k in os.environ if k.startswith("HALAL_")]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+    yield monkeypatch
+
+
 
 
 def _bar(open_time: datetime, close: float, *, high: float | None = None,
@@ -98,6 +138,10 @@ class FakeSource:
 
 def _settings(**over) -> Settings:
     base = dict(
+        # Telegram pinned OFF: keeps every PaperRun test hermetic (a local .env
+        # must never make the notifier try to reach the network) and keeps the
+        # "fail-safe without Telegram" path genuine.
+        **TELEGRAM_OFF,
         trading_mode="paper",
         live_enabled=False,
         paper_starting_usdt=1000.0,
@@ -118,26 +162,48 @@ def _settings(**over) -> Settings:
 # ---------------------------------------------------------------------------
 
 
-def test_telegram_settings_default_to_off():
+TELEGRAM_ALERT_FIELDS = (
+    "telegram_alert_daily_pnl",
+    "telegram_alert_strategy_change",
+    "telegram_alert_emergency_stop",
+    "telegram_alert_risk_rejection",
+    "telegram_alert_system_error",
+)
+
+
+def test_telegram_settings_default_to_off(hermetic_env):
+    # Hermetic: no HALAL_* env vars and no .env file, so this is the shipped default.
     s = Settings()
     assert s.telegram_enabled is False
     assert s.telegram_bot_token == ""
     assert s.telegram_chat_id == ""
-    for field in (
-        "telegram_alert_daily_pnl",
-        "telegram_alert_strategy_change",
-        "telegram_alert_emergency_stop",
-        "telegram_alert_risk_rejection",
-        "telegram_alert_system_error",
-    ):
+    for field in TELEGRAM_ALERT_FIELDS:
         assert getattr(s, field) is False, field
 
+    # Belt and braces: init kwargs outrank env vars and .env, so with Telegram
+    # switched ON in the ambient environment an explicitly pinned OFF block still
+    # comes back OFF. This is the property the three hermetic tests rely on.
+    hermetic_env.setenv("HALAL_TELEGRAM_ENABLED", "true")
+    hermetic_env.setenv("HALAL_TELEGRAM_BOT_TOKEN", "ambient-token")
+    hermetic_env.setenv("HALAL_TELEGRAM_CHAT_ID", "ambient-chat")
+    hermetic_env.setenv("HALAL_TELEGRAM_ALERT_DAILY_PNL", "true")
+    pinned = Settings(**TELEGRAM_OFF)
+    assert pinned.telegram_enabled is False
+    assert pinned.telegram_bot_token == ""
+    assert pinned.telegram_chat_id == ""
+    for field in TELEGRAM_ALERT_FIELDS:
+        assert getattr(pinned, field) is False, field
 
-async def test_notifier_is_fail_safe_with_empty_settings():
+
+async def test_notifier_is_fail_safe_with_empty_settings(hermetic_env):
     notifier = TelegramNotifier(Settings())
     assert await notifier.send(AlertType.DAILY_PNL, "hello") is False
     # enabled but no token/chat => still False, still no exception
-    partial = Settings(telegram_enabled=True, telegram_alert_daily_pnl=True)
+    # (token/chat pinned empty so a local .env can never trigger a real send)
+    partial = Settings(telegram_enabled=True, telegram_alert_daily_pnl=True,
+                       telegram_bot_token="", telegram_chat_id="")
+    assert partial.telegram_bot_token == ""
+    assert partial.telegram_chat_id == ""
     assert await TelegramNotifier(partial).send(AlertType.DAILY_PNL, "hello") is False
 
 
@@ -401,8 +467,9 @@ async def test_run_evidence_and_paper_days_recorded():
     await run.maybe_request_extended_paper()
 
 
-async def test_report_send_is_fail_safe_without_telegram():
-    settings = _settings()
+async def test_report_send_is_fail_safe_without_telegram(hermetic_env):
+    settings = _settings()  # Telegram pinned OFF (see TELEGRAM_OFF)
+    assert settings.telegram_enabled is False
     run = PaperRun(
         settings,
         source=_breakout_source(),
