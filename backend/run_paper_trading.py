@@ -102,7 +102,22 @@ WEEKDAYS: dict[str, int] = {
     "MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6,
 }
 
-_PAPER_START_RE = re.compile(r"paper_start=(\S+)")
+# Matches ONLY the ISO-8601 timestamp that follows `paper_start=`.
+#
+# The audit trail is not always a plain string: the DB-backed progression store
+# persists `detail` JSON-encased, so an event read back looks like
+#   {"stage": "BACKTEST", ..., "note": "paper_start=2026-10-09T06:00:27.721304+00:00"}
+# A greedy `(\S+)` used to swallow the trailing `"}` and every restart then threw
+# the stamp away and silently re-anchored the 30-day clock to the restart time.
+# Keep the character class free of quotes/braces so only a parseable stamp is
+# captured (no partial matches either: the date and time parts are anchored).
+_PAPER_START_RE = re.compile(
+    r"paper_start="
+    r"([0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"[Tt ][0-9]{2}:[0-9]{2}"
+    r"(?::[0-9]{2}(?:\.[0-9]{1,9})?)?"
+    r"(?:[Zz]|[+-][0-9]{2}:[0-9]{2})?)"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +584,15 @@ class PaperRun:
                 stamp = match.group(1) if match else event.get("timestamp")
                 if not stamp:
                     continue
-                parsed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+                try:
+                    parsed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+                except ValueError:
+                    # one unreadable stamp must not throw away an older, good one;
+                    # only a trail with nothing parseable at all falls back to now.
+                    self.log.warning(
+                        "unparseable paper_start stamp in the audit trail: %r", stamp
+                    )
+                    continue
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=timezone.utc)
                 return parsed

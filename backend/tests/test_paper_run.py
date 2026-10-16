@@ -479,3 +479,105 @@ def test_run_module_has_no_live_order_path():
 
     assert LIVE_EXECUTION_IMPLEMENTED is False
     assert run_mod.DEFAULT_LIVE_REST_BASE.endswith("binance.vision")
+# ---------------------------------------------------------------------------
+# 9. paper_start clock anchor survives the JSON-encased audit detail (regression)
+# ---------------------------------------------------------------------------
+ANCHOR = datetime(2026, 10, 9, 6, 0, 27, 721304, tzinfo=timezone.utc)
+ANCHOR_ISO = "2026-10-09T06:00:27.721304+00:00"
+# What the DB-backed progression store hands back: `detail` persisted as a JSON
+# document, so the stored string ends with `"}` right after the timestamp.
+DB_DETAIL = '{"stage": "BACKTEST", "live_enabled": false, "note": "paper_start=' + ANCHOR_ISO + '"}'
+PLAIN_DETAIL = f"paper_start={ANCHOR_ISO}"
+
+
+class _TrailStore(NullProgressionStore):
+    """A read-only audit trail: whatever events the test wants history() to show."""
+
+    def __init__(self, events: list[dict]) -> None:
+        super().__init__()
+        self._trail = events
+
+    def history(self, limit: int = 50) -> list[dict]:  # newest first, like the real store
+        return list(self._trail)[:limit]
+
+
+def _run_with_trail(detail: str, *, timestamp: str | None = None) -> PaperRun:
+    event: dict = {"event_type": "paper_run_start", "detail": detail}
+    if timestamp is not None:
+        event["timestamp"] = timestamp
+    store = _TrailStore([event])
+    return PaperRun(
+        _settings(),
+        source=_breakout_source(),
+        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        store=store,
+        machine=ProgressionMachine(settings=_settings(), store=store),
+        now=lambda: NOW,
+    )
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [DB_DETAIL, PLAIN_DETAIL],
+    ids=["db-json-encased", "legacy-plain"],
+)
+def test_paper_start_regex_captures_only_the_iso_stamp(detail: str):
+    match = run_mod._PAPER_START_RE.search(detail)
+    assert match is not None
+    assert match.group(1) == ANCHOR_ISO
+    # the captured group must be directly parseable (this is what used to blow up)
+    assert datetime.fromisoformat(match.group(1)) == ANCHOR
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [DB_DETAIL, PLAIN_DETAIL],
+    ids=["db-json-encased", "legacy-plain"],
+)
+def test_load_or_create_paper_start_recovers_anchor_not_now(detail: str):
+    run = _run_with_trail(detail)
+    recovered = run._load_or_create_paper_start()
+    assert recovered == ANCHOR
+    assert recovered != NOW
+    # and the restarted run measures its 30-day clock from the original anchor,
+    # not from the restart moment (which is what the bug silently did)
+    run.paper_start = recovered
+    restart = ANCHOR + timedelta(days=31, hours=2)
+    assert run.paper_days(now=restart) == pytest.approx(31.083, abs=0.01)
+    assert run.paper_days(now=restart) != pytest.approx(0.0, abs=0.01)
+
+
+def test_load_or_create_paper_start_skips_unreadable_stamp_for_an_older_good_one():
+    store = _TrailStore(
+        [
+            {"event_type": "paper_run_resume", "detail": "paper_start=2026-10-09T06:00:27.721304"},
+            {"event_type": "paper_run_resume", "detail": DB_DETAIL},
+        ]
+    )
+    run = PaperRun(
+        _settings(),
+        source=_breakout_source(),
+        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        store=store,
+        machine=ProgressionMachine(settings=_settings(), store=store),
+        now=lambda: NOW,
+    )
+    assert run._load_or_create_paper_start() == ANCHOR
+
+
+def test_load_or_create_paper_start_falls_back_to_now_when_nothing_parseable():
+    store = _TrailStore(
+        [
+            {"event_type": "paper_run_start", "detail": '{"note": "no stamp here"}'},
+            {"event_type": "stage_change", "detail": "paper_start=2026-10-09T06:00:27+00:00"},
+        ]
+    )
+    run = PaperRun(
+        _settings(),
+        source=_breakout_source(),
+        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        store=store,
+        machine=ProgressionMachine(settings=_settings(), store=store),
+        now=lambda: NOW,
+    )
+    assert run._load_or_create_paper_start() == NOW
