@@ -16,6 +16,7 @@ Everything here runs fully offline.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -648,3 +649,307 @@ def test_load_or_create_paper_start_falls_back_to_now_when_nothing_parseable():
         now=lambda: NOW,
     )
     assert run._load_or_create_paper_start() == NOW
+
+
+# ---------------------------------------------------------------------------
+# 10. Report-scheduler survival across restarts (platform machine swaps)
+# ---------------------------------------------------------------------------
+# The platform has replaced this machine repeatedly, killing the run and
+# restarting its clock forward. In-memory scheduler state meant the 18:00 UTC
+# deadline was silently dropped; the state below is persisted, so a restart
+# delivers exactly one missed daily + one missed weekly and never re-sends a
+# slot it already reported. Everything here is offline (synthetic candles, fake
+# notifier, tmp state file).
+UTC = timezone.utc
+
+
+class _Clock:
+    """A settable clock: emulates a restart on a box whose clock jumped."""
+
+    def __init__(self, moment: datetime) -> None:
+        self.moment = moment
+
+    def __call__(self) -> datetime:
+        return self.moment
+
+    def set(self, moment: datetime) -> None:
+        self.moment = moment
+
+
+class _CountingNotifier:
+    """Records what would have gone to Telegram. No network."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[object, str]] = []
+
+    async def send(self, alert_type, text: str) -> bool:  # noqa: ANN001 - mirrors TelegramNotifier
+        self.sent.append((alert_type, text))
+        return True
+
+
+def _survivor_run(state_path, clock, *, notifier=None) -> PaperRun:
+    return PaperRun(
+        _settings(),
+        source=_breakout_source(),
+        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        store=NullProgressionStore(),
+        notifier=notifier,
+        now=clock,
+        state_path=state_path,
+    )
+
+
+def _state_json(state_path) -> dict:
+    return json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def _watermark(state_path, kind: str):
+    stamp = _state_json(state_path)["watermarks"].get(kind)
+    return datetime.fromisoformat(stamp) if stamp else None
+
+
+def _kinds(run: PaperRun) -> list[str]:
+    return [record["kind"] for record in run.report_log]
+
+
+async def test_restart_after_deadline_delivers_exactly_one_catch_up_daily(tmp_path):
+    """(1) Deadline passed while the run was down => one caught-up daily, marked."""
+    state = tmp_path / "paper_run_state.json"
+    clock = _Clock(datetime(2026, 10, 20, 12, 0, tzinfo=UTC))
+
+    first_notifier = _CountingNotifier()
+    first = _survivor_run(state, clock, notifier=first_notifier)
+    await first.start()
+    await first._maybe_send_reports()
+    assert first_notifier.sent == []                      # 12:00 — nothing is due yet
+    assert state.exists()                                  # ...but the baseline is on disk
+    assert _watermark(state, "daily") == datetime(2026, 10, 19, 18, 0, tzinfo=UTC)
+
+    # machine swap: the process dies at ~17:00 and the new box is already at 19:05
+    clock.set(datetime(2026, 10, 20, 19, 5, tzinfo=UTC))
+    second_notifier = _CountingNotifier()
+    second = _survivor_run(state, clock, notifier=second_notifier)
+    await second.start()
+    await second._maybe_send_reports()
+
+    assert len(second_notifier.sent) == 1                  # exactly one report
+    assert _kinds(second) == ["DAILY"]
+    assert "Paper Report" in second_notifier.sent[0][1]
+    assert _watermark(state, "daily") == datetime(2026, 10, 20, 18, 0, tzinfo=UTC)
+    # the catch-up slot is in the persisted key set too
+    assert "daily:2026-10-20T18:00" in _state_json(state)["sent_keys"]["daily"]
+    # and it is a *report of today's data*, produced by the normal report path
+    assert second.report_log[0]["delivered"] is True
+
+
+async def test_no_catch_up_when_slot_already_marked_across_restarts(tmp_path):
+    """(2) A marked slot is never sent again — not even by a later restart."""
+    state = tmp_path / "paper_run_state.json"
+    clock = _Clock(datetime(2026, 10, 20, 12, 0, tzinfo=UTC))
+
+    first = _survivor_run(state, clock, notifier=_CountingNotifier())
+    await first.start()
+    await first._maybe_send_reports()
+
+    # 18:00 comes and goes *while the process is alive*: one normal report
+    clock.set(datetime(2026, 10, 20, 18, 5, tzinfo=UTC))
+    await first._maybe_send_reports()
+    assert _kinds(first) == ["DAILY"]
+
+    # restart 1: same slot, already marked => nothing
+    clock.set(datetime(2026, 10, 20, 20, 0, tzinfo=UTC))
+    second_notifier = _CountingNotifier()
+    second = _survivor_run(state, clock, notifier=second_notifier)
+    await second.start()
+    await second._maybe_send_reports()
+    assert second_notifier.sent == []
+    assert second.report_log == []
+
+    # restart 2: next morning, still before the next deadline => nothing
+    clock.set(datetime(2026, 10, 21, 9, 0, tzinfo=UTC))
+    third_notifier = _CountingNotifier()
+    third = _survivor_run(state, clock, notifier=third_notifier)
+    await third.start()
+    await third._maybe_send_reports()
+    assert third_notifier.sent == []
+    # the persisted key set stayed stable across both restarts
+    assert _state_json(state)["sent_keys"]["daily"].count("daily:2026-10-20T18:00") == 1
+
+
+async def test_multi_day_clock_jump_catches_up_at_most_one_each(tmp_path):
+    """(3) A huge forward jump => one daily + one weekly, never a backfill burst."""
+    state = tmp_path / "paper_run_state.json"
+    # Sunday 2026-10-18 09:00 UTC: last daily slot 10-17 18:00, last weekly 10-11 12:00
+    clock = _Clock(datetime(2026, 10, 18, 9, 0, tzinfo=UTC))
+    before = _survivor_run(state, clock, notifier=_CountingNotifier())
+    await before.start()
+    await before._maybe_send_reports()
+    assert before.report_log == []
+    assert _watermark(state, "daily") == datetime(2026, 10, 17, 18, 0, tzinfo=UTC)
+    assert _watermark(state, "weekly") == datetime(2026, 10, 11, 12, 0, tzinfo=UTC)
+
+    # the box comes back eleven days later (Oct 16 -> Oct 29 is what really happened)
+    clock.set(datetime(2026, 10, 29, 6, 0, tzinfo=UTC))
+    notifier = _CountingNotifier()
+    after = _survivor_run(state, clock, notifier=notifier)
+    await after.start()
+    await after._maybe_send_reports()
+
+    assert len(notifier.sent) == 2                          # bounded: 1 daily + 1 weekly
+    assert sorted(_kinds(after)) == ["DAILY", "WEEKLY"]
+    assert _watermark(state, "daily") == datetime(2026, 10, 28, 18, 0, tzinfo=UTC)
+    assert _watermark(state, "weekly") == datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
+
+    # a further check in the same process sends nothing more
+    await after._maybe_send_reports()
+    assert len(notifier.sent) == 2
+    # and a restart right afterwards sends nothing either (no backfill spam)
+    restart_notifier = _CountingNotifier()
+    clock.set(datetime(2026, 10, 29, 9, 0, tzinfo=UTC))
+    again = _survivor_run(state, clock, notifier=restart_notifier)
+    await again.start()
+    await again._maybe_send_reports()
+    assert restart_notifier.sent == []
+
+
+async def test_missing_state_file_is_a_clean_start(tmp_path):
+    """(4a) No state file => no crash, baseline seeded, file created, no send."""
+    state = tmp_path / "paper_run_state.json"
+    assert not state.exists()
+    clock = _Clock(datetime(2026, 10, 20, 12, 0, tzinfo=UTC))
+    notifier = _CountingNotifier()
+    run = _survivor_run(state, clock, notifier=notifier)
+    await run.start()
+    await run._maybe_send_reports()
+    assert notifier.sent == []
+    assert state.exists()
+    payload = _state_json(state)
+    assert payload["version"] == 1
+    assert payload["restarts"] == 1
+    assert payload["watermarks"]["daily"] == "2026-10-19T18:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        "{\"watermarks\": {\"daily\": ",           # truncated (crash mid-write)
+        "not json at all",
+        "[]",                                       # valid JSON, wrong shape
+        "{}",                                       # valid JSON, no fields
+        json.dumps({"watermarks": "nope", "sent_keys": 5, "restarts": "many"}),
+    ],
+    ids=["truncated", "plain-text", "json-list", "empty-object", "wrong-types"],
+)
+async def test_corrupt_state_file_starts_empty_and_never_raises(tmp_path, garbage):
+    """(4b) Corrupt/unreadable state => warning + empty state; the run continues."""
+    state = tmp_path / "paper_run_state.json"
+    state.write_text(garbage, encoding="utf-8")
+    clock = _Clock(datetime(2026, 10, 20, 12, 0, tzinfo=UTC))
+    notifier = _CountingNotifier()
+    run = _survivor_run(state, clock, notifier=notifier)
+    await run.start()                     # must not raise
+    await run._maybe_send_reports()       # must not raise, must not spam
+    assert notifier.sent == []
+    payload = _state_json(state)          # the file was rewritten in a valid form
+    assert payload["watermarks"]["daily"] == "2026-10-19T18:00:00+00:00"
+    assert payload["version"] == 1
+
+
+async def test_clock_jumping_backward_does_not_resend(tmp_path):
+    """(5) Watermark-based dedupe also holds when the clock goes backwards."""
+    state = tmp_path / "paper_run_state.json"
+    clock = _Clock(datetime(2026, 10, 20, 12, 0, tzinfo=UTC))
+    seeded = _survivor_run(state, clock, notifier=_CountingNotifier())
+    await seeded.start()                       # baseline: 10-19 18:00 / 10-18 12:00
+    await seeded._maybe_send_reports()
+    assert seeded.report_log == []
+
+    clock.set(datetime(2026, 10, 29, 20, 0, tzinfo=UTC))
+    await seeded._maybe_send_reports()
+    # 20:00 on the 29th: the 29th's 18:00 daily and the 25th's weekly are due
+    assert sorted(_kinds(seeded)) == ["DAILY", "WEEKLY"]
+    assert _watermark(state, "daily") == datetime(2026, 10, 29, 18, 0, tzinfo=UTC)
+    assert _watermark(state, "weekly") == datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
+
+    # the new box comes up with a clock that is a week BEHIND
+    clock.set(datetime(2026, 10, 22, 12, 0, tzinfo=UTC))
+    backward_notifier = _CountingNotifier()
+    backward = _survivor_run(state, clock, notifier=backward_notifier)
+    await backward.start()
+    await backward._maybe_send_reports()
+    assert backward_notifier.sent == []            # nothing is "new" going backwards
+    assert backward.report_log == []
+
+    # the clock catches up again to a slot that was already reported: still silent
+    clock.set(datetime(2026, 10, 29, 21, 0, tzinfo=UTC))
+    await backward._maybe_send_reports()
+    assert backward_notifier.sent == []
+    assert _watermark(state, "daily") == datetime(2026, 10, 29, 18, 0, tzinfo=UTC)
+
+    # ...but a genuinely new slot is still delivered afterwards
+    clock.set(datetime(2026, 10, 30, 19, 0, tzinfo=UTC))
+    await backward._maybe_send_reports()
+    assert _kinds(backward) == ["DAILY"]
+    assert _watermark(state, "daily") == datetime(2026, 10, 30, 18, 0, tzinfo=UTC)
+
+
+async def test_normal_in_process_scheduling_is_unchanged(tmp_path):
+    """(6) 18:00 UTC daily and SUN 12:00 UTC weekly still fire exactly once each."""
+    state = tmp_path / "paper_run_state.json"
+    clock = _Clock(datetime(2026, 10, 20, 12, 0, tzinfo=UTC))
+    notifier = _CountingNotifier()
+    run = _survivor_run(state, clock, notifier=notifier)
+    await run.start()
+
+    await run._maybe_send_reports()                       # 12:00 — nothing due
+    assert _kinds(run) == []
+
+    clock.set(datetime(2026, 10, 20, 18, 5, tzinfo=UTC))  # 18:05 — daily
+    await run._maybe_send_reports()
+    assert _kinds(run) == ["DAILY"]
+
+    clock.set(datetime(2026, 10, 20, 23, 0, tzinfo=UTC))  # same slot, later poll
+    await run._maybe_send_reports()
+    assert _kinds(run) == ["DAILY"]
+
+    clock.set(datetime(2026, 10, 21, 18, 5, tzinfo=UTC))  # next day's daily
+    await run._maybe_send_reports()
+    assert _kinds(run) == ["DAILY", "DAILY"]
+
+    clock.set(datetime(2026, 10, 25, 12, 5, tzinfo=UTC))  # Sunday 12:05 — weekly (+that day's daily)
+    await run._maybe_send_reports()
+    assert _kinds(run) == ["DAILY", "DAILY", "DAILY", "WEEKLY"]
+    assert _watermark(state, "weekly") == datetime(2026, 10, 25, 12, 0, tzinfo=UTC)
+
+    clock.set(datetime(2026, 10, 25, 18, 5, tzinfo=UTC))  # same Sunday, daily due again
+    await run._maybe_send_reports()
+    assert _kinds(run) == ["DAILY", "DAILY", "DAILY", "WEEKLY", "DAILY"]
+
+
+def test_state_writes_are_atomic_and_leave_no_temp_file(tmp_path):
+    store = run_mod.ReportStateStore(tmp_path / "paper_run_state.json")
+    state = {
+        "watermarks": {kind: datetime(2026, 10, 20, 18, 0, tzinfo=UTC) for kind in run_mod.REPORT_KINDS},
+        "sent_keys": {"daily": ["daily:2026-10-20T18:00"], "weekly": []},
+        "last_report": {"kind": "DAILY"},
+        "restarts": 3,
+    }
+    assert store.save(state, now=datetime(2026, 10, 20, 18, 1, tzinfo=UTC)) is True
+    assert not list(tmp_path.glob("*.tmp"))                    # temp file was renamed away
+    payload = json.loads(store.path.read_text(encoding="utf-8"))
+    assert payload["restarts"] == 3
+    assert payload["sent_keys"]["daily"] == ["daily:2026-10-20T18:00"]
+    # a stale temp file from a previous crash is ignored by load()
+    (tmp_path / "paper_run_state.json.tmp").write_text("{ half written", encoding="utf-8")
+    loaded = store.load()
+    assert loaded["watermarks"]["daily"] == datetime(2026, 10, 20, 18, 0, tzinfo=UTC)
+    assert loaded["found"] is True
+
+
+def test_unwritable_state_path_is_fail_safe(tmp_path):
+    """Persistence failures must degrade to "no state", never to a dead run."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("", encoding="utf-8")
+    store = run_mod.ReportStateStore(blocker / "paper_run_state.json")
+    assert store.save({"watermarks": {}, "sent_keys": {}, "last_report": {}, "restarts": 0}) is False
+    assert store.load()["found"] is False

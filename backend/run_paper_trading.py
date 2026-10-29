@@ -35,6 +35,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import re
 import signal
 import sys
@@ -344,6 +345,196 @@ def _run_key(kind: str, when: datetime) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Report-scheduler state — survives a restart (and a platform machine swap)
+# ---------------------------------------------------------------------------
+#
+# The scheduler used to keep "which report slots were already sent" in a plain
+# in-memory set. A restart therefore forgot everything *and* recomputed the next
+# deadlines from the (fresh) clock, so a deadline that came and went while the
+# process was dead was silently dropped — which is exactly what happened when
+# the platform replaced the machine under a running paper run and the clock
+# jumped forward by days.
+#
+# The state below is persisted to one small JSON file next to this script and
+# reloaded before the first report check. The catch-up bound comes from what is
+# stored: **one watermark (the most recent slot actually sent) per kind**, not a
+# per-day ledger. The due slot is always "the most recent deadline at or before
+# now", so after any length of gap a restart delivers at most one daily and one
+# weekly report and then resumes normal scheduling. The watermark is also what
+# makes the dedupe survive a *backward* clock jump: a slot at or before the
+# watermark is already covered, whatever the set of remembered keys says.
+
+DEFAULT_REPORT_STATE_FILENAME = "paper_run_state.json"
+
+#: Report kinds that get their own persisted watermark.
+REPORT_KINDS: tuple[str, ...] = ("daily", "weekly")
+
+#: How many exact slot keys to keep per kind (belt-and-braces dedupe + audit).
+MAX_REMEMBERED_KEYS = 20
+
+REPORT_STATE_VERSION = 1
+
+
+def default_report_state_path() -> Path:
+    """``backend/paper_run_state.json`` — next to this script, on shared disk."""
+    return Path(__file__).resolve().parent / DEFAULT_REPORT_STATE_FILENAME
+
+
+def most_recent_daily_slot(now: datetime, at: str = "18:00") -> datetime:
+    """The most recent daily deadline at or before ``now`` (UTC, minute precision)."""
+    moment = now.astimezone(timezone.utc)
+    hhmm = parse_hhmm(at)
+    slot = moment.replace(hour=hhmm.hour, minute=hhmm.minute, second=0, microsecond=0)
+    if slot > moment:
+        slot -= timedelta(days=1)
+    return slot
+
+
+def most_recent_weekly_slot(now: datetime, at: str = "12:00", day: str = "SUN") -> datetime:
+    """The most recent weekly deadline at or before ``now`` (UTC)."""
+    target = WEEKDAYS.get(str(day).strip().upper())
+    if target is None:
+        raise ValueError(f"unknown weekday {day!r}; use one of {sorted(WEEKDAYS)}")
+    slot = most_recent_daily_slot(now, at)
+    return slot - timedelta(days=(slot.weekday() - target) % 7)
+
+
+def parse_slot(value: Any) -> Optional[datetime]:
+    """Parse a persisted slot stamp; ``None`` for anything unreadable."""
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+class ReportStateStore:
+    """One small JSON file holding the scheduler's sent-slot watermarks.
+
+    Fail-safe by construction: a missing, unreadable, truncated or otherwise
+    corrupt file is a warning plus empty state — never an exception. Writes are
+    atomic (temp file in the same directory + :func:`os.replace`) so a crash in
+    the middle of a write cannot leave a half-written state file behind, and
+    they only happen when a slot is actually marked (or on startup), never on
+    every poll.
+    """
+
+    def __init__(self, path: Any, *, log: Optional[logging.Logger] = None) -> None:
+        self.path = Path(path)
+        self.log = log or logger
+
+    # -- read ---------------------------------------------------------------
+    def load(self) -> dict[str, Any]:
+        """Persisted state, normalised. Never raises."""
+        state: dict[str, Any] = {
+            "watermarks": {kind: None for kind in REPORT_KINDS},
+            "sent_keys": {kind: [] for kind in REPORT_KINDS},
+            "last_report": {},
+            "restarts": 0,
+            "found": False,
+        }
+        try:
+            raw = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return state
+        except OSError as exc:
+            self.log.warning(
+                "report state %s unreadable (%s) — starting with empty state",
+                self.path,
+                exc,
+            )
+            return state
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            self.log.warning(
+                "report state %s is corrupt (%s) — starting with empty state",
+                self.path,
+                exc,
+            )
+            return state
+        if not isinstance(data, dict):
+            self.log.warning(
+                "report state %s is not a JSON object — starting with empty state",
+                self.path,
+            )
+            return state
+
+        state["found"] = True
+        watermarks = data.get("watermarks")
+        if isinstance(watermarks, dict):
+            for kind in REPORT_KINDS:
+                parsed = parse_slot(watermarks.get(kind))
+                if parsed is not None:
+                    state["watermarks"][kind] = parsed
+        sent_keys = data.get("sent_keys")
+        if isinstance(sent_keys, dict):
+            for kind in REPORT_KINDS:
+                keys = sent_keys.get(kind)
+                if isinstance(keys, list):
+                    state["sent_keys"][kind] = [
+                        str(key) for key in keys if isinstance(key, str)
+                    ][-MAX_REMEMBERED_KEYS:]
+        last_report = data.get("last_report")
+        if isinstance(last_report, dict):
+            state["last_report"] = last_report
+        try:
+            state["restarts"] = max(0, int(data.get("restarts") or 0))
+        except (TypeError, ValueError):
+            state["restarts"] = 0
+        return state
+
+    # -- write --------------------------------------------------------------
+    def save(self, state: dict[str, Any], *, now: Optional[datetime] = None) -> bool:
+        """Atomically persist ``state``. Never raises; returns success."""
+        stamp = (now or utcnow()).astimezone(timezone.utc)
+        payload = {
+            "version": REPORT_STATE_VERSION,
+            "updated_at": stamp.isoformat(),
+            "watermarks": {
+                kind: (
+                    state.get("watermarks", {}).get(kind).astimezone(timezone.utc).isoformat()
+                    if state.get("watermarks", {}).get(kind) is not None
+                    else None
+                )
+                for kind in REPORT_KINDS
+            },
+            "sent_keys": {
+                kind: list(state.get("sent_keys", {}).get(kind) or [])
+                for kind in REPORT_KINDS
+            },
+            "last_report": dict(state.get("last_report") or {}),
+            "restarts": int(state.get("restarts") or 0),
+        }
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self.path)
+            return True
+        except OSError as exc:
+            self.log.warning(
+                "could not persist report state to %s (%s) — continuing", self.path, exc
+            )
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:  # pragma: no cover - cleanup is best effort
+                pass
+            return False
+
+
+# ---------------------------------------------------------------------------
 # Live market-data probe
 # ---------------------------------------------------------------------------
 
@@ -480,6 +671,7 @@ class PaperRun:
         weekly_at: str = "12:00",
         weekly_day: str = "SUN",
         paper_start: Optional[datetime] = None,
+        state_path: Optional[Any] = None,
     ) -> None:
         self.settings = settings
         self.source = source
@@ -529,6 +721,18 @@ class PaperRun:
         self._evidence_error_logged = False
         self._next_daily: Optional[datetime] = None
         self._next_weekly: Optional[datetime] = None
+        # Persisted report-scheduler state. ``state_path=None`` keeps the run
+        # in-memory only (tests / embedded use); ``main()`` always passes the
+        # real path so the production run survives a restart.
+        self.state_store: Optional[ReportStateStore] = (
+            ReportStateStore(state_path) if state_path is not None else None
+        )
+        self._report_state_loaded = False
+        self._report_checks = 0
+        self._sent_slots: dict[str, Optional[datetime]] = {k: None for k in REPORT_KINDS}
+        self._sent_keys: dict[str, list[str]] = {k: [] for k in REPORT_KINDS}
+        self._last_report: dict[str, Any] = {}
+        self._restarts = 0
 
     # -- lifecycle -----------------------------------------------------------
     async def start(self) -> None:
@@ -551,6 +755,10 @@ class PaperRun:
             self.paper_start.isoformat(),
         )
         now = self._now()
+        # Load the persisted scheduler state BEFORE the first report check: that
+        # is what turns "the process died over the 18:00 UTC deadline" into one
+        # caught-up report instead of a silently missed one.
+        self._ensure_report_state_loaded(now)
         self._next_daily = next_daily_utc(now, self.daily_at)
         self._next_weekly = next_weekly_utc(now, self.weekly_at, self.weekly_day)
         self.log.info(
@@ -932,24 +1140,176 @@ class PaperRun:
             )
         return record
 
-    async def _maybe_send_reports(self, now: Optional[datetime] = None) -> None:
+    # -- persisted scheduler state -------------------------------------------
+    def _current_slot(self, kind: str, now: datetime) -> datetime:
+        """The most recent ``kind`` deadline at or before ``now`` (UTC)."""
+        if kind == "daily":
+            return most_recent_daily_slot(now, self.daily_at)
+        return most_recent_weekly_slot(now, self.weekly_at, self.weekly_day)
+
+    def _ensure_report_state_loaded(self, now: Optional[datetime] = None) -> None:
+        """Load the persisted watermarks once per process. Never raises."""
+        if self._report_state_loaded:
+            return
+        self._report_state_loaded = True
         now = now or self._now()
-        if self._next_daily is None:
-            self._next_daily = next_daily_utc(now, self.daily_at)
-        if self._next_weekly is None:
-            self._next_weekly = next_weekly_utc(now, self.weekly_at, self.weekly_day)
-        while now >= self._next_daily:
-            key = _run_key("daily", self._next_daily)
-            if key not in self._sent_reports:
-                self._sent_reports.add(key)
-                await self.send_report("daily", now=now)
-            self._next_daily = next_daily_utc(self._next_daily, self.daily_at)
-        while now >= self._next_weekly:
-            key = _run_key("weekly", self._next_weekly)
-            if key not in self._sent_reports:
-                self._sent_reports.add(key)
-                await self.send_report("weekly", now=now)
-            self._next_weekly = next_weekly_utc(self._next_weekly, self.weekly_at, self.weekly_day)
+        store = self.state_store
+        if store is not None:
+            try:
+                state = store.load()
+            except Exception:  # noqa: BLE001 - a bad state file must never stop the run
+                self.log.warning("report state load failed", exc_info=True)
+                state = {
+                    "watermarks": {k: None for k in REPORT_KINDS},
+                    "sent_keys": {k: [] for k in REPORT_KINDS},
+                    "last_report": {},
+                    "restarts": 0,
+                    "found": False,
+                }
+            self._restarts = int(state.get("restarts") or 0) + 1
+            self._last_report = dict(state.get("last_report") or {})
+            for kind in REPORT_KINDS:
+                self._sent_slots[kind] = state["watermarks"].get(kind)
+                self._sent_keys[kind] = list(state["sent_keys"].get(kind) or [])
+                self._sent_reports.update(self._sent_keys[kind])
+
+        seeded: list[str] = []
+        for kind in REPORT_KINDS:
+            if self._sent_slots.get(kind) is None:
+                # First start with no recorded history: establish a baseline
+                # instead of back-filling a period that may already have been
+                # reported (e.g. by hand). From here on, a deadline that passes
+                # while the process is dead is a genuine miss and is caught up.
+                try:
+                    self._sent_slots[kind] = self._current_slot(kind, now)
+                except ValueError as exc:
+                    self.log.warning("cannot seed %s report slot: %s", kind, exc)
+                    continue
+                seeded.append(kind)
+
+        if store is not None:
+            self.log.info(
+                "report state | file=%s restarts=%d", store.path, self._restarts
+            )
+            for kind in REPORT_KINDS:
+                slot = self._sent_slots.get(kind)
+                self.log.info(
+                    "report state | %s watermark=%s%s",
+                    kind,
+                    slot.astimezone(timezone.utc).isoformat() if slot else "none",
+                    " (baseline seeded — no catch-up on this first start)"
+                    if kind in seeded
+                    else "",
+                )
+            if seeded or self._restarts > 1:
+                self._persist_report_state(now)
+
+    def _persist_report_state(self, now: Optional[datetime] = None) -> None:
+        """Atomic write of the scheduler state. Never raises (store is fail-safe)."""
+        if self.state_store is None:
+            return
+        try:
+            self.state_store.save(
+                {
+                    "watermarks": dict(self._sent_slots),
+                    "sent_keys": {k: list(v) for k, v in self._sent_keys.items()},
+                    "last_report": dict(self._last_report),
+                    "restarts": self._restarts,
+                },
+                now=now or self._now(),
+            )
+        except Exception:  # noqa: BLE001 - persistence must never break the run
+            self.log.warning("report state persist failed", exc_info=True)
+
+    def _mark_sent(self, kind: str, slot: datetime, key: str, now: datetime) -> None:
+        """Record a slot as sent *before* sending, and persist it.
+
+        Marking first is deliberate: if the process is killed mid-send, the next
+        restart must not send the same slot again (no double-sends). The trade
+        off — a report lost to a crash between mark and send — is bounded by the
+        one-per-slot rule the owner asked for.
+        """
+        self._sent_reports.add(key)
+        keys = [key] + [k for k in self._sent_keys.get(kind, []) if k != key]
+        self._sent_keys[kind] = keys[:MAX_REMEMBERED_KEYS]
+        watermark = self._sent_slots.get(kind)
+        if watermark is None or slot > watermark:
+            self._sent_slots[kind] = slot
+        self._last_report = {
+            "kind": kind.upper(),
+            "slot": slot.astimezone(timezone.utc).isoformat(),
+            "marked_at": now.astimezone(timezone.utc).isoformat(),
+            "key": key,
+        }
+        self._persist_report_state(now)
+
+    def _record_delivery(
+        self, kind: str, slot: datetime, key: str, delivered: bool, now: datetime
+    ) -> None:
+        self._last_report = {
+            "kind": kind.upper(),
+            "slot": slot.astimezone(timezone.utc).isoformat(),
+            "sent_at": now.astimezone(timezone.utc).isoformat(),
+            "key": key,
+            "delivered": bool(delivered),
+        }
+        self._persist_report_state(now)
+
+    def _advance_next(self, kind: str, now: datetime) -> None:
+        """Keep ``_next_daily``/``_next_weekly`` accurate for logs on next fire."""
+        try:
+            if kind == "daily":
+                self._next_daily = next_daily_utc(now, self.daily_at)
+            else:
+                self._next_weekly = next_weekly_utc(
+                    now, self.weekly_at, self.weekly_day
+                )
+        except ValueError:  # pragma: no cover - bad --weekly-report-day
+            pass
+
+    async def _maybe_send_reports(self, now: Optional[datetime] = None) -> None:
+        """Send **at most one** daily and **at most one** weekly report per check.
+
+        The due slot is the *most recent* deadline at or before ``now``, not
+        "every deadline since the last report". That bound is what stops a
+        forward clock jump (the platform moving the run onto a new machine can
+        advance the clock by days) from turning into a burst of back-dated
+        reports: a restart delivers one caught-up daily plus one caught-up
+        weekly, marks both, and normal 18:00 UTC / SUN 12:00 UTC scheduling
+        resumes. Every slot at or before the persisted watermark counts as sent,
+        so a *backward* clock jump cannot re-send an already-reported slot
+        either.
+        """
+        now = now or self._now()
+        self._ensure_report_state_loaded(now)
+        first_check = self._report_checks == 0
+        self._report_checks += 1
+        for kind in REPORT_KINDS:
+            try:
+                slot = self._current_slot(kind, now)
+            except ValueError as exc:
+                self.log.warning("cannot compute %s report slot: %s", kind, exc)
+                continue
+            key = _run_key(kind, slot)
+            watermark = self._sent_slots.get(kind)
+            already_sent = key in self._sent_reports or key in self._sent_keys.get(kind, [])
+            if watermark is not None and slot <= watermark:
+                already_sent = True
+            if already_sent:
+                self._advance_next(kind, now)
+                continue
+            if first_check:
+                self.log.info(
+                    "CATCH-UP: %s report for slot %s was missed while the run was "
+                    "down (previous watermark %s) — sending exactly one",
+                    kind,
+                    slot.astimezone(timezone.utc).isoformat(),
+                    watermark.astimezone(timezone.utc).isoformat() if watermark else "none",
+                )
+            self._mark_sent(kind, slot, key, now)
+            record = await self.send_report(kind, now=now)
+            self._record_delivery(kind, slot, key, bool(record.get("delivered")), now)
+            self._advance_next(kind, now)
 
     def _record(self, outcome: BarOutcome) -> BarOutcome:
         if outcome.equity is None:
@@ -1092,6 +1452,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--no-reports", action="store_true", help="do not send reports")
     parser.add_argument(
+        "--state-file",
+        default=None,
+        help=(
+            "where to persist the report-scheduler state (default: "
+            f"{DEFAULT_REPORT_STATE_FILENAME} next to this script). This file is what "
+            "lets a restart — e.g. after the platform replaces the machine — deliver "
+            "one missed daily plus one missed weekly report instead of silently "
+            "dropping them, without double-sending a slot already reported."
+        ),
+    )
+    parser.add_argument(
         "--no-db",
         action="store_true",
         help="do not persist audit/progression rows (in-memory only)",
@@ -1181,6 +1552,14 @@ async def main(argv: Optional[list[str]] = None) -> int:
 
     store, session = _make_store(settings, args)
     notifier = TelegramNotifier(settings)
+    # The report-scheduler state file is the machine-swap guarantee: without it a
+    # restart forgets which slots were already reported and silently drops any
+    # deadline that passed while the process was down.
+    state_path = (
+        Path(args.state_file).expanduser()
+        if getattr(args, "state_file", None)
+        else default_report_state_path()
+    )
     run = PaperRun(
         settings,
         source=source,
@@ -1193,6 +1572,7 @@ async def main(argv: Optional[list[str]] = None) -> int:
         weekly_day=args.weekly_report_day,
         trade_amount=args.trade_usdt,
         stop_loss_pct=args.stop_loss_pct,
+        state_path=state_path,
     )
 
     if args.once:
