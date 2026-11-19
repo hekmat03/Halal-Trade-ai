@@ -1,0 +1,45 @@
+[Unit]
+# HalalTrade AI — 30-day PAPER trading run (simulated money, live trading OFF).
+#
+# This unit is NOT installed on the current machine and must not be installed
+# without the owner's explicit go-ahead. Read backend/deploy/README.md first.
+Description=HalalTrade AI paper run (BTC/USDT spot, SIMULATED money, live OFF)
+Documentation=https://github.com/hekmat03/Halal-Trade-ai/blob/main/backend/docs/paper_run.md
+After=network-online.target
+Wants=network-online.target
+# Never give up restarting: a crash mid-run should come back, not stay down.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/team/shared/halaltrade/backend
+# Paper only. These two are belt-and-braces: the runner itself forces
+# trading_mode=paper and live_enabled=False and has no live order path.
+Environment=HALAL_TRADING_MODE=paper
+Environment=HALAL_LIVE_ENABLED=false
+Environment=PYTHONUNBUFFERED=1
+
+# --- Variant A (default): run the paper run directly -------------------------
+# Canonical flags, identical to the owner's launch and to
+# /home/team/shared/relaunch_paper_run.sh. Secrets stay in backend/.env (the
+# runner's Settings reads it); they are NOT copied into this unit.
+ExecStart=/home/team/shared/halaltrade/backend/.venv/bin/python /home/team/shared/halaltrade/backend/run_paper_trading.py --strategy donchian_1d --timeframe 1d --starting-usdt 1000 --trade-usdt 100 --poll-seconds 3600 --daily-report-utc 18:00 --weekly-report-day SUN --weekly-report-utc 12:00
+
+# --- Variant B: put the watchdog in front (uncomment, and comment out A) -----
+# The supervisor adds the "refuse to start a second instance" check, the
+# no-.env no-op rule and exponential backoff; systemd still owns the restart.
+#ExecStart=/home/team/shared/halaltrade/backend/supervise_paper_run.sh
+
+Restart=always
+RestartSec=30
+KillSignal=SIGTERM
+TimeoutStopSec=60
+# One run log for both variants, appending so restarts never truncate the trail.
+StandardOutput=append:/home/team/shared/halaltrade/backend/paper_run.log
+StandardError=append:/home/team/shared/halaltrade/backend/paper_run.log
+# Hardening (harmless for this workload).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

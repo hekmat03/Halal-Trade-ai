@@ -22,3 +22,8 @@ build/
 # OS
 .DS_Store
 backend/data/
+# Paper-run scheduler state (written at runtime by run_paper_trading.py — never commit)
+backend/paper_run_state.json
+backend/paper_run_state.json.tmp
+# Crash-supervisor log (runtime artefact)
+backend/supervise_paper_run.log

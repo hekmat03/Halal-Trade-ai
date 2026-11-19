@@ -58,7 +58,9 @@ down cleanly (`Ctrl-C` in the foreground; `kill <pid>` when detached) and write 
 
 Useful flags: `--once` (one poll, then exit), `--check-data` (probe the data
 sources and exit), `--max-iterations N` (stop after N polls), `--no-reports`,
-`--no-db`, `--log-level DEBUG`, `--list-strategies`.
+`--no-db`, `--state-file PATH` (report-scheduler state; default
+`paper_run_state.json` next to the script — see "Surviving a restart" below),
+`--log-level DEBUG`, `--list-strategies`.
 
 ## Environment variables
 
@@ -138,6 +140,49 @@ refuses it with its own reason.
   source) and covers the trailing 1 day / 7 days.
 * A missed slot is caught up once the loop next runs; already-sent slots are
   de-duplicated, so restarts never double-send.
+
+### Surviving a restart (and a platform machine swap)
+
+The process has repeatedly been killed mid-run by the platform replacing this
+machine, which also jumps the clock forward. In-memory scheduler state meant a
+deadline that came and went while the run was down was silently dropped — the
+owner got no report at all. So the scheduler state is now **persisted**:
+
+* file: `backend/paper_run_state.json` (next to `run_paper_trading.py`;
+  override with `--state-file PATH`), gitignored, written **atomically**
+  (temp file + `os.replace`) and only when a slot is marked — never per poll;
+* contents: one **watermark per kind** (the most recent daily / weekly slot that
+  was actually reported), a short list of the recent slot keys, the last report
+  summary, and a restart counter. No prices, balances or secrets are stored;
+* on start the watermarks are loaded **before** the first report check;
+* catch-up: if the current UTC time is past a deadline whose slot is not marked,
+  the run sends **one** report for the most recent due slot and marks it. The
+  bound is structural — the due slot is always "the most recent deadline at or
+  before now", never "every deadline since the last report" — so a clock that
+  jumped days or weeks forward still produces **one caught-up daily + one
+  caught-up weekly**, not a backfill burst;
+* no double-sends: a slot at or before the persisted watermark is never sent
+  again, in-process or after a restart — including when the new box's clock is
+  *behind* the old one. A slot is marked (and persisted) *before* the send, so a
+  kill mid-send cannot cause a duplicate;
+* fail-safe: a missing, unreadable or corrupt state file logs a warning and
+  starts with empty state; the run continues. On a genuinely first start with no
+  state the watermark is **seeded from the current time instead of back-filled**
+  (nothing is invented about a period that may already have been reported);
+* nothing else changes: report text/format, `send_report`, the Telegram notifier,
+  the gates, sizes, fees and equity handling are untouched.
+
+### Crash supervisor (optional, adversarial to nothing)
+
+`backend/supervise_paper_run.sh` is a 60-second watchdog that relaunches the run
+with the owner's exact flags if it is not alive (never a second instance; no-op
+when `backend/.env` is missing; its own log file; exponential backoff).
+`backend/deploy/halaltrade-paper-run.service` is a matching `Restart=always`
+systemd unit, so a plain crash comes back without a human.
+
+Neither is installed on this machine. **Honest limit:** a supervisor cannot
+survive the machine being replaced — only the persisted state + catch-up above
+does that. See `backend/deploy/README.md` for install steps and caveats.
 
 ### Telegram caveat
 
