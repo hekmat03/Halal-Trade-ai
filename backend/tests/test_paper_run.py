@@ -252,7 +252,8 @@ def test_report_formatting_daily_and_weekly():
     assert "Period P&L: +12.34 USDT" in text
     assert "wins: 1, losses: 0" in text
     assert "win rate: 100.0%" in text
-    assert "Stage: PAPER — paper day 4.5 of 30" in text
+    assert "Stage: PAPER — paper day 4.5 of 30" not in text
+    assert "Mode: PAPER (simulated, live off) — progression: PAPER — paper day 4.5 of 30" in text
     assert "not a profit guarantee" in text
 
     daily = format_daily_report(stats)
@@ -962,17 +963,21 @@ def test_unwritable_state_path_is_fail_safe(tmp_path):
 
 
 def _identity_run(*, window_days: int = 548, run_label: str = "1D-CH15",
-                  now: datetime = NOW, daily_at: str = "18:00") -> PaperRun:
+                  now: datetime = NOW, daily_at: str = "18:00",
+                  strategy_name: str = "donchian_1d",
+                  timeframe: str = "1d") -> PaperRun:
     """A paper run whose identity flags are set, offline and deterministic."""
     return PaperRun(
         _settings(),
         source=_breakout_source(),
-        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        strategy=get_strategy(strategy_name, timeframe=timeframe, trade_amount=100.0),
         store=NullProgressionStore(),
         now=lambda: now,
         paper_start=NOW - timedelta(days=12),
+        timeframe=timeframe,
         window_days=window_days,
         run_label=run_label,
+        strategy_name=strategy_name,
         daily_at=daily_at,
     )
 
@@ -999,7 +1004,8 @@ def test_window_days_must_be_positive():
 
 async def test_run_label_marks_reports_so_two_runs_are_not_confusable():
     one_d = _identity_run(run_label="1D-CH15")
-    four_h = _identity_run(run_label="4H-CH20")
+    four_h = _identity_run(run_label="4H-CH20", strategy_name="donchian_breakout",
+                           timeframe="4h")
     await one_d.start()
     await four_h.start()
     text_1d = (await one_d.send_report("daily"))["text"]
@@ -1007,16 +1013,19 @@ async def test_run_label_marks_reports_so_two_runs_are_not_confusable():
     assert "[1D-CH15]" in text_1d and "1D-CH15" in text_1d.splitlines()[0]
     assert "[4H-CH20]" in text_4h and "4H-CH20" in text_4h.splitlines()[0]
     assert text_1d.splitlines()[0] != text_4h.splitlines()[0]
-    stage_1d = next(l for l in text_1d.splitlines() if l.startswith("Stage: "))
-    assert "[1D-CH15]" in stage_1d and "of 548" in stage_1d
+    mode_1d = next(l for l in text_1d.splitlines() if l.startswith("Mode: "))
+    assert "progression: BACKTEST" in mode_1d and "of 548" in mode_1d
+    # the identity line names the strategy and timeframe of each run
+    assert "strategy donchian_1d @ 1d" in text_1d
+    assert "strategy donchian_breakout @ 4h" in text_4h
 
     # unlabelled is still the old text: no brackets anywhere in the header
     plain = _identity_run(run_label="")
     await plain.start()
     plain_text = (await plain.send_report("daily"))["text"]
     assert plain_text.splitlines()[0].startswith("\U0001F4C5 Daily Paper Report — ")
-    plain_stage = next(l for l in plain_text.splitlines() if l.startswith("Stage: "))
-    assert "[" not in plain_stage and "paper day 12.0 of 548" in plain_stage
+    plain_mode = next(l for l in plain_text.splitlines() if l.startswith("Mode: "))
+    assert "[" not in plain_mode and "paper day 12.0 of 548" in plain_mode
 
 
 def test_cli_exposes_window_label_and_db_flags_with_safe_defaults():
