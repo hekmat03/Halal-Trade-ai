@@ -62,6 +62,40 @@ sources and exit), `--max-iterations N` (stop after N polls), `--no-reports`,
 `paper_run_state.json` next to the script — see "Surviving a restart" below),
 `--log-level DEBUG`, `--list-strategies`.
 
+## Running two paper runs side by side
+
+Three additive flags let a second run live next to the first without either
+misreporting its own window or strategy. All three default to the old
+single-run behaviour.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--window-days N` | `30` | The run's declared paper window in days. It is what the report's `paper day X of N` line divides by; it is **not** a gate and never relaxes a progression limit. |
+| `--run-label NAME` | empty | Short run identifier (e.g. `1D-CH15`, `4H-CH20`) rendered into the report header and stage line, and into the `paper run started` / `report schedule` log lines. Empty = unchanged single-run output. |
+| `--db-path PATH` | `HALAL_DATABASE_URL` | sqlite file for this run's audit trail, progression evidence and `paper_start` anchor. **Each parallel run needs its own file** or their clocks and stages would mix. |
+
+Two runs, one command each (see `/home/team/shared/start_paper_runs.sh` for the
+idempotent version, and `/home/team/shared/paper_runs.md` for the live configs):
+
+```bash
+cd /home/team/shared/halaltrade/backend
+setsid nohup .venv/bin/python run_paper_trading.py \
+  --strategy donchian_1d --timeframe 1d --window-days 548 --run-label 1D-CH15 \
+  --daily-report-utc 18:00 --weekly-report-utc 12:00 --weekly-report-day SUN \
+  --db-path data/paper_run_1d_ch15.db \
+  > /home/team/shared/paper_run_1d_ch15.log 2>&1 &
+
+setsid nohup .venv/bin/python run_paper_trading.py \
+  --strategy donchian_breakout --timeframe 4h --window-days 548 --run-label 4H-CH20 \
+  --daily-report-utc 18:10 --weekly-report-utc 12:10 --weekly-report-day SUN \
+  --db-path data/paper_run_4h_ch20.db \
+  > /home/team/shared/paper_run_4h_ch20.log 2>&1 &
+```
+
+Report times are minute-precise (`--daily-report-utc 18:10` fires at 18:10 UTC,
+not 18:00), so the two Telegram messages arrive separately and carry their own
+`[1D-CH15]` / `[4H-CH20]` header.
+
 ## Environment variables
 
 All settings come from `halaltrade/config.py`, prefix `HALAL_`. Secrets live
@@ -112,11 +146,14 @@ the rounding is visible and never silent. If the alignment cannot produce a
 valid order the raw amount is passed through and the engine's own validation
 refuses it with its own reason.
 
-## How the 30-day clock accumulates
+## How the paper-day clock accumulates
 
 * On start the run writes a `paper_run_start` audit event carrying
   `paper_start=<UTC timestamp>` into the progression store.
 * `paper_days` = `now − paper_start`, in UTC days.
+* The report renders `paper day X of N` where `N` is the run's
+  `--window-days` (30 by default). A run started with `--window-days 548`
+  reports `of 548`, so it never claims a 30-day denominator it does not have.
 * On every restart the run **recovers** `paper_start` from the audit trail
   (`paper_run_start` / `paper_run_resume` events) rather than resetting it, so
   days accumulate across restarts, crashes and redeploys. Only if the trail has
@@ -125,7 +162,10 @@ refuses it with its own reason.
   `EXTENDED_PAPER_30D`. **The machine decides**: it applies the real limits
   (≥30 days, ≥30 paper trades, profit factor ≥ 1.0, max drawdown ≤ 20%) and the
   result is logged as `EXTENDED_PAPER_30D transition: ...`. A time-based request
-  that the machine refuses changes nothing.
+  that the machine refuses changes nothing. That 30 is the progression spec's
+  minimum paper duration (`ProgressionLimits.min_extended_paper_days`) and is
+  deliberately **not** tied to `--window-days`: the window flag only labels the
+  report, it never moves a gate.
 * `HALAL_LIVE_ENABLED`/live credentials are irrelevant here: nothing in this
   path can enable live trading, and the progression machine still requires the
   owner's explicit confirmations for any later stage.
