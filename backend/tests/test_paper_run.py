@@ -953,3 +953,163 @@ def test_unwritable_state_path_is_fail_safe(tmp_path):
     store = run_mod.ReportStateStore(blocker / "paper_run_state.json")
     assert store.save({"watermarks": {}, "sent_keys": {}, "last_report": {}, "restarts": 0}) is False
     assert store.load()["found"] is False
+
+
+
+# ---------------------------------------------------------------------------
+# 9. Two runs side by side: window, run label, own database, minute schedule
+# ---------------------------------------------------------------------------
+
+
+def _identity_run(*, window_days: int = 548, run_label: str = "1D-CH15",
+                  now: datetime = NOW, daily_at: str = "18:00") -> PaperRun:
+    """A paper run whose identity flags are set, offline and deterministic."""
+    return PaperRun(
+        _settings(),
+        source=_breakout_source(),
+        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        store=NullProgressionStore(),
+        now=lambda: now,
+        paper_start=NOW - timedelta(days=12),
+        window_days=window_days,
+        run_label=run_label,
+        daily_at=daily_at,
+    )
+
+
+async def test_window_days_drives_the_report_denominator():
+    long_run = _identity_run(window_days=548)
+    await long_run.start()
+    record = await long_run.send_report("daily")
+    assert "paper day 12.0 of 548" in record["text"]
+    assert "of 30" not in record["text"]
+    assert record["stats"]["window_days"] == 548
+
+    # the default keeps the historical 30-day wording exactly as it was
+    default_run = _identity_run(window_days=30, run_label="")
+    await default_run.start()
+    default_text = (await default_run.send_report("daily"))["text"]
+    assert "paper day 12.0 of 30" in default_text
+
+
+def test_window_days_must_be_positive():
+    with pytest.raises(ValueError):
+        _identity_run(window_days=0)
+
+
+async def test_run_label_marks_reports_so_two_runs_are_not_confusable():
+    one_d = _identity_run(run_label="1D-CH15")
+    four_h = _identity_run(run_label="4H-CH20")
+    await one_d.start()
+    await four_h.start()
+    text_1d = (await one_d.send_report("daily"))["text"]
+    text_4h = (await four_h.send_report("daily"))["text"]
+    assert "[1D-CH15]" in text_1d and "1D-CH15" in text_1d.splitlines()[0]
+    assert "[4H-CH20]" in text_4h and "4H-CH20" in text_4h.splitlines()[0]
+    assert text_1d.splitlines()[0] != text_4h.splitlines()[0]
+    stage_1d = next(l for l in text_1d.splitlines() if l.startswith("Stage: "))
+    assert "[1D-CH15]" in stage_1d and "of 548" in stage_1d
+
+    # unlabelled is still the old text: no brackets anywhere in the header
+    plain = _identity_run(run_label="")
+    await plain.start()
+    plain_text = (await plain.send_report("daily"))["text"]
+    assert plain_text.splitlines()[0].startswith("\U0001F4C5 Daily Paper Report — ")
+    plain_stage = next(l for l in plain_text.splitlines() if l.startswith("Stage: "))
+    assert "[" not in plain_stage and "paper day 12.0 of 548" in plain_stage
+
+
+def test_cli_exposes_window_label_and_db_flags_with_safe_defaults():
+    parser = run_mod.build_arg_parser()
+    defaults = parser.parse_args([])
+    assert defaults.window_days == 30
+    assert defaults.run_label == ""
+    assert defaults.db_path is None
+
+    parsed = parser.parse_args(
+        [
+            "--strategy", "donchian_breakout",
+            "--timeframe", "4h",
+            "--window-days", "548",
+            "--run-label", "4H-CH20",
+            "--db-path", "/tmp/paper_run_4h_ch20.db",
+            "--daily-report-utc", "18:10",
+        ]
+    )
+    assert parsed.window_days == 548
+    assert parsed.run_label == "4H-CH20"
+    assert parsed.db_path == "/tmp/paper_run_4h_ch20.db"
+    assert parsed.daily_report_utc == "18:10"
+
+
+def test_db_path_gives_each_run_its_own_sqlite_file(tmp_path):
+    import argparse
+
+    nested = tmp_path / "data" / "run_a.db"
+    url_a = run_mod.sqlite_url_for_path(str(nested))
+    url_b = run_mod.sqlite_url_for_path(str(tmp_path / "run_b.db"))
+    assert url_a != url_b
+    assert url_a.startswith("sqlite:////")          # absolute path kept absolute
+    assert nested.parent.is_dir()                   # parent created for the run
+
+    settings = _settings()
+    store_a, session_a = run_mod._make_store(
+        settings, argparse.Namespace(no_db=False, db_path=str(nested))
+    )
+    store_b, session_b = run_mod._make_store(
+        settings, argparse.Namespace(no_db=False, db_path=str(tmp_path / "run_b.db"))
+    )
+    assert session_a is not None and session_b is not None
+    assert nested.exists() and (tmp_path / "run_b.db").exists()
+
+    # the paper-start anchor written by run A is invisible to run B
+    store_a.append(
+        event_type="paper_run_start",
+        snapshot={"stage": "PAPER"},
+        detail=f"paper_start={ANCHOR_ISO}",
+    )
+    assert any("paper_start" in str(e.get("detail")) for e in store_a.history(limit=50))
+    assert not any("paper_start" in str(e.get("detail")) for e in store_b.history(limit=50))
+    session_a.close()
+    session_b.close()
+
+
+def test_daily_report_utc_accepts_a_non_zero_minute():
+    assert parse_hhmm("18:10").minute == 10
+    before = datetime(2026, 10, 8, 18, 5, tzinfo=timezone.utc)
+    assert next_daily_utc(before, "18:10") == datetime(
+        2026, 10, 8, 18, 10, tzinfo=timezone.utc
+    )
+    at = datetime(2026, 10, 8, 18, 10, tzinfo=timezone.utc)
+    assert next_daily_utc(at, "18:10") == datetime(
+        2026, 10, 9, 18, 10, tzinfo=timezone.utc
+    )
+    # the weekly stagger is minute-precise too (SUN 12:10, not SUN 12:00)
+    assert next_weekly_utc(before, "12:10", "SUN") == datetime(
+        2026, 10, 11, 12, 10, tzinfo=timezone.utc
+    )
+
+
+async def test_staggered_minute_reports_fire_at_their_own_minute():
+    clock = {"now": datetime(2026, 10, 8, 18, 0, tzinfo=timezone.utc)}
+    run = PaperRun(
+        _settings(),
+        source=_breakout_source(),
+        strategy=get_strategy("donchian_1d", timeframe="1d", trade_amount=100.0),
+        store=NullProgressionStore(),
+        now=lambda: clock["now"],
+        daily_at="18:10",
+        weekly_at="12:10",
+        weekly_day="SUN",
+    )
+    await run.start()
+    assert run._next_daily == datetime(2026, 10, 8, 18, 10, tzinfo=timezone.utc)
+    assert run._next_weekly == datetime(2026, 10, 11, 12, 10, tzinfo=timezone.utc)
+
+    clock["now"] = datetime(2026, 10, 8, 18, 9, tzinfo=timezone.utc)
+    await run._maybe_send_reports()
+    assert run.report_log == []                     # 18:09 is not 18:10
+
+    clock["now"] = datetime(2026, 10, 8, 18, 10, tzinfo=timezone.utc)
+    await run._maybe_send_reports()
+    assert [r["kind"] for r in run.report_log] == ["DAILY"]

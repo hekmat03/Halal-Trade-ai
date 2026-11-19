@@ -107,6 +107,13 @@ class PaperStats:
     stage: str = ""
     paper_days: float = 0.0
     data_source: str = ""
+    #: Identifier of the run this report belongs to (e.g. ``"1D-CH15"``). Empty
+    #: by default so a single-run report is unchanged; set it when more than one
+    #: paper run reports to the same Telegram chat, so the two are not confused.
+    run_label: str = ""
+    #: The run's declared paper window in days (``30`` by default). It is what
+    #: the "paper day N of X" line divides by — never a hardcoded 30.
+    window_days: int = 30
 
     @property
     def pnl(self) -> float:
@@ -149,6 +156,8 @@ class PaperStats:
             "stage": self.stage,
             "paper_days": self.paper_days,
             "data_source": self.data_source,
+            "run_label": self.run_label,
+            "window_days": self.window_days,
         }
 
 
@@ -172,6 +181,8 @@ def compute_stats(
     stage: str = "",
     paper_days: float = 0.0,
     data_source: str = "",
+    run_label: str = "",
+    window_days: int = 30,
 ) -> PaperStats:
     """Aggregate one reporting period from fills + an equity curve.
 
@@ -220,6 +231,8 @@ def compute_stats(
         stage=stage,
         paper_days=paper_days,
         data_source=data_source,
+        run_label=run_label,
+        window_days=window_days,
     )
 
 
@@ -341,6 +354,8 @@ class PerformanceTracker:
         stage: str = "",
         paper_days: float = 0.0,
         data_source: str = "",
+        run_label: str = "",
+        window_days: int = 30,
     ) -> PaperStats:
         """Compute stats for the period starting at ``period_start``."""
         return compute_stats(
@@ -355,6 +370,8 @@ class PerformanceTracker:
             stage=stage,
             paper_days=paper_days,
             data_source=data_source,
+            run_label=run_label,
+            window_days=window_days,
         )
 
 
@@ -374,11 +391,20 @@ def _fmt_profit_factor(value: float) -> str:
 
 
 def format_report(stats: PaperStats) -> str:
-    """Format one daily/weekly paper report. Pure function."""
+    """Format one daily/weekly paper report. Pure function.
+
+    When ``stats.run_label`` is set it is rendered into the header (and the
+    stage line) so two paper runs reporting to the same chat are never
+    confusable. Empty by default — a single run's report is byte-identical to
+    what it was before the label existed.
+    """
     icon = "\U0001F4C5" if stats.label.upper().startswith("D") else "\U0001F5D3"
     title = stats.label.title()
+    header = f"{icon} {title} Paper Report"
+    if stats.run_label:
+        header += f" [{stats.run_label}]"
     lines = [
-        f"{icon} {title} Paper Report — {stats.period_end:%Y-%m-%d %H:%M} UTC",
+        f"{header} — {stats.period_end:%Y-%m-%d %H:%M} UTC",
         f"{stats.symbol} — simulated money (no live order path)",
         f"Equity: {_fmt_money(stats.starting_equity)} -> {_fmt_money(stats.ending_equity)} "
         f"({stats.pnl_pct:+.2f}%)",
@@ -393,8 +419,10 @@ def format_report(stats: PaperStats) -> str:
     ]
     if stats.stage:
         stage_line = f"Stage: {stats.stage}"
+        if stats.run_label:
+            stage_line += f" [{stats.run_label}]"
         if stats.paper_days > 0:
-            stage_line += f" — paper day {stats.paper_days:.1f} of 30"
+            stage_line += f" — paper day {stats.paper_days:.1f} of {stats.window_days}"
         lines.append(stage_line)
     if stats.data_source:
         lines.append(f"Market data: {stats.data_source} (freshness checked per bar)")

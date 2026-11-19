@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""30-day PAPER-trading run on live market data — simulated money only.
+"""PAPER-trading run on live market data — simulated money only.
 
 What this script does
 ---------------------
@@ -17,6 +17,17 @@ Long-running asyncio loop that, on every poll:
    ``LiveReadinessCheck`` sees a real paper track record;
 6. sends a daily (default 18:00 UTC) and a weekly (default Sunday 12:00 UTC)
    Telegram report when Telegram is configured.
+
+Run identity (two runs can live side by side)
+---------------------------------------------
+* ``--window-days N`` declares the run's paper window (default 30, so a plain
+  invocation is unchanged). It is what the report's "paper day X of N" line
+  divides by — the window is never assumed to be 30.
+* ``--run-label NAME`` (default empty) is rendered into the report header and
+  the stage line, so two runs reporting into one chat are not confusable.
+* ``--db-path PATH`` gives a run its own sqlite database (audit trail,
+  progression evidence, paper-start anchor). Default: ``HALAL_DATABASE_URL``.
+  Each run must have its own database or their clocks/stages would mix.
 
 Hard limits (unchanged from the rest of the repo)
 -------------------------------------------------
@@ -672,6 +683,8 @@ class PaperRun:
         weekly_day: str = "SUN",
         paper_start: Optional[datetime] = None,
         state_path: Optional[Any] = None,
+        window_days: int = 30,
+        run_label: str = "",
     ) -> None:
         self.settings = settings
         self.source = source
@@ -697,6 +710,14 @@ class PaperRun:
         self.daily_at = daily_at
         self.weekly_at = weekly_at
         self.weekly_day = weekly_day
+        #: The run's declared paper window in days. Reporting only: it labels
+        #: "paper day X of N". The progression machine keeps its own spec limits
+        #: (>= 30 days of paper) and is never widened by this value.
+        self.window_days = int(window_days)
+        if self.window_days <= 0:
+            raise ValueError(f"window_days must be positive, got {window_days!r}")
+        #: Short run identifier rendered into reports/logs ("" = unlabelled).
+        self.run_label = str(run_label or "").strip()
         self._now = now
         self.log = logger
 
@@ -744,14 +765,17 @@ class PaperRun:
             f"paper_start={self.paper_start.astimezone(timezone.utc).isoformat()}",
         )
         self.log.info(
-            "paper run started | strategy=%s timeframe=%s symbol=%s "
-            "starting_balance=%.2f USDT size=%.2f USDT stop=%.2f%% paper_start=%s",
+            "paper run started | run_label=%s strategy=%s timeframe=%s symbol=%s "
+            "starting_balance=%.2f USDT size=%.2f USDT stop=%.2f%% window_days=%d "
+            "paper_start=%s",
+            self.run_label or "(none)",
             getattr(self.strategy, "name", type(self.strategy).__name__),
             self.timeframe,
             self.symbol,
             self.settings.paper_starting_usdt,
             self.trade_amount,
             self.stop_loss_pct * 100.0,
+            self.window_days,
             self.paper_start.isoformat(),
         )
         now = self._now()
@@ -762,8 +786,9 @@ class PaperRun:
         self._next_daily = next_daily_utc(now, self.daily_at)
         self._next_weekly = next_weekly_utc(now, self.weekly_at, self.weekly_day)
         self.log.info(
-            "report schedule | daily at %s UTC (next %s) | weekly %s %s UTC (next %s) "
-            "| telegram_enabled=%s",
+            "report schedule | run_label=%s daily at %s UTC (next %s) | weekly %s %s UTC "
+            "(next %s) | telegram_enabled=%s",
+            self.run_label or "(none)",
             self.daily_at,
             self._next_daily.isoformat(),
             self.weekly_day,
@@ -1050,11 +1075,19 @@ class PaperRun:
         """Ask for EXTENDED_PAPER_30D once the >=30-day clock is genuinely met.
 
         The decision itself is the progression machine's (it applies the real
-        limits); this only decides *when to ask*. Never raises.
+        limits); this only decides *when to ask*. The threshold is the
+        progression spec's own minimum paper duration (``min_extended_paper_days``,
+        30 by default) — **not** the run's ``--window-days`` reporting window,
+        which labels the report and never relaxes or delays a progression gate.
+        Never raises.
         """
         try:
             days = self.paper_days()
-            if days < 30.0:
+            required = float(
+                getattr(getattr(self.machine, "limits", None),
+                        "min_extended_paper_days", 30.0)
+            )
+            if days < required:
                 return
             if self.machine.current_stage != ProgressionStage.PAPER:
                 return
@@ -1098,6 +1131,8 @@ class PaperRun:
             stage=machine_stage(self.machine),
             paper_days=self.paper_days(now),
             data_source=self.last_candle_source or "unknown",
+            run_label=self.run_label,
+            window_days=self.window_days,
         )
 
     async def send_report(self, kind: str, *, now: Optional[datetime] = None) -> dict[str, Any]:
@@ -1427,6 +1462,32 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weekly-report-utc", default=settings.paper_weekly_report_utc)
     parser.add_argument("--weekly-report-day", default=settings.paper_weekly_report_day)
     parser.add_argument(
+        "--window-days",
+        type=int,
+        default=30,
+        help=(
+            "the run's declared paper window in days, used by the report's "
+            "'paper day N of WINDOW' line (default 30)"
+        ),
+    )
+    parser.add_argument(
+        "--run-label",
+        default="",
+        help=(
+            "short run identifier rendered into report headers/logs so two "
+            "parallel runs are distinguishable, e.g. 1D-CH15 (default: empty)"
+        ),
+    )
+    parser.add_argument(
+        "--db-path",
+        default=None,
+        help=(
+            "sqlite file for this run's audit trail/progression state "
+            "(default: HALAL_DATABASE_URL, i.e. sqlite:///halaltrade.db). Give "
+            "each parallel run its own file."
+        ),
+    )
+    parser.add_argument(
         "--rest-base",
         default=None,
         help=(
@@ -1481,15 +1542,30 @@ async def _resolve_rest_base(
     return select_live_rest_base(probes), probes
 
 
+def sqlite_url_for_path(path: str) -> str:
+    """``--db-path`` value -> a SQLAlchemy sqlite URL (absolute paths kept)."""
+    resolved = Path(path).expanduser().resolve()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{resolved}"
+
+
 def _make_store(settings: Settings, args: argparse.Namespace):
     """DB-backed progression store, or an in-memory one if the DB is unusable."""
     if args.no_db:
         logger.warning("--no-db: audit/progression rows are NOT persisted")
         return NullProgressionStore(), None
+    database_url = settings.database_url
+    if getattr(args, "db_path", None):
+        try:
+            database_url = sqlite_url_for_path(args.db_path)
+        except OSError:
+            logger.warning("--db-path unusable — using in-memory store", exc_info=True)
+            return NullProgressionStore(), None
+        logger.info("database for this run: %s", database_url)
     try:
         from halaltrade.db.models import create_session
 
-        factory = create_session(database_url=settings.database_url)
+        factory = create_session(database_url=database_url)
         store = DbProgressionStore(session_factory=factory)
         session = factory()
         return store, session
@@ -1520,6 +1596,10 @@ async def main(argv: Optional[list[str]] = None) -> int:
         bar_seconds(args.timeframe)
     except ValueError as exc:
         logger.error("%s", exc)
+        return 2
+    if args.window_days <= 0:
+        logger.error("--window-days must be a positive number of days, got %d",
+                     args.window_days)
         return 2
 
     if args.check_data:
@@ -1573,6 +1653,8 @@ async def main(argv: Optional[list[str]] = None) -> int:
         trade_amount=args.trade_usdt,
         stop_loss_pct=args.stop_loss_pct,
         state_path=state_path,
+        window_days=args.window_days,
+        run_label=args.run_label,
     )
 
     if args.once:
