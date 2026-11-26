@@ -1,55 +1,87 @@
 #!/usr/bin/env bash
-# Best-effort crash supervisor for the HalalTrade AI 30-day PAPER run.
+# Best-effort crash supervisor for HalalTrade AI PAPER runs (one supervisor per run).
 #
 # WHAT THIS IS — AND IS NOT
 # -------------------------
 # This only protects against a PLAIN PROCESS CRASH while the box is alive (OOM
 # kill, unhandled error that escapes the loop, an accidental `kill`). It does
 # NOT and cannot survive the platform replacing the machine: nothing this script
-# does runs on the new box, and systemd state does not travel with it.
+# does runs on the new box, and no state travels with it. After a machine swap
+# you still run /home/team/shared/start_paper_runs.sh once.
 #
-# The actual machine-swap guarantee lives in the runner itself:
-#   backend/run_paper_trading.py persists the report-scheduler state to
-#   backend/paper_run_state.json and, on the next start, delivers at most one
-#   missed daily + one missed weekly Telegram report (bounded catch-up, no
-#   double-sends, no backfill spam). This script is defense in depth only.
+# The machine-swap recovery that does exist lives in the runner itself:
+#   backend/run_paper_trading.py persists the report-scheduler state to its
+#   --state-file and, on the next start, delivers at most one missed daily +
+#   one missed weekly Telegram report (bounded catch-up, no double-sends).
+#   Each run's 18-month clock is anchored in its own DB, so a restart resumes
+#   the same clock. This script is defense in depth only.
+#
+# PER-RUN MODE (what the two live paper runs use)
+# ----------------------------------------------
+#   supervise_paper_run.sh --run-label 1D-CH15 \
+#       --run-log /home/team/shared/paper_run_1d_ch15.log \
+#       [--interval 15] [--supervisor-log /path.log] \
+#       -- --strategy donchian_1d --timeframe 1d ... --run-label 1D-CH15 \
+#          --db-path ... --state-file ...
+#
+# Everything after `--` is the run's OWN launch argv, passed through verbatim, so
+# the supervisor restarts the run with exactly the flags it was started with
+# (same strategy, timeframe, size, window, report slots, DB, state file). The
+# runner path is added by this script and is deliberately NOT part of the
+# supervisor's own command line, so `pgrep -f run_paper_trading.py` never
+# mistakes a supervisor for a run.
+#
+# A per-run supervisor only ever looks at ITS OWN label:
+#   * it is alive-and-idle whenever that label has a live runner — it never
+#     restarts, touches or masks another label's run;
+#   * if that label has no live runner it relaunches it, and then verifies;
+#   * one supervisor per label: it holds an exclusive flock on its supervisor
+#     log, so a second supervisor for the same label exits immediately;
+#   * never a duplicate run: it re-checks the label before launching, and after
+#     a launch any *additional* process for the same label is stopped (oldest
+#     pid wins). It never signals a process of another label.
 #
 # SAFETY PROPERTIES
-# * Paper only. The flags below are byte-identical to the owner's launch (the
-#   same flags /home/team/shared/relaunch_paper_run.sh uses); no size, strategy,
-#   config or gate value is changed here, and live trading stays OFF (the runner
-#   forces trading_mode=paper / live_enabled=False).
-# * Never starts a second instance: if any `python ... run_paper_trading.py`
-#   process is alive it does nothing at all.
-# * Writes nothing except its own log file (`supervise_paper_run.log`) and the
-#   runner's usual log; it does not touch halaltrade.db, .env, or the API server.
-# * No backend/.env => no config => NO-OP. It never creates, edits or invents
-#   configuration, and it never blocks waiting for input.
-# * Backoff: repeated instant deaths (a bad config, a broken venv) are retried
-#   with exponential backoff (up to 15 min) instead of a hot restart loop.
+# * Paper only. Every launch exports HALAL_TRADING_MODE=paper and
+#   HALAL_LIVE_ENABLED=false; no size, strategy, config or gate value is changed
+#   and live trading stays OFF (no live-order path exists in the runner).
+# * It refuses to supervise unless its argv carries --run-label <label>, so it
+#   can never start a run that reports under the wrong label.
+# * It writes nothing except its own supervisor log (+ the per-run flock file)
+#   and the run's usual log; it does not touch halaltrade.db, .env or the API.
+# * No backend/.env => no config => NO-OP (legacy mode); it never creates or
+#   edits configuration, and it never blocks waiting for input.
+# * Backoff: repeated instant deaths (bad config, broken venv) are retried with
+#   exponential backoff (60 s doubling, capped at 15 min) instead of a hot loop.
 #
-# USAGE
+# LEGACY SINGLE-RUN MODE (unchanged; do not use it with two runs — it no-ops
+# whenever ANY run_paper_trading.py is alive, so it cannot tell the runs apart):
 #   backend/supervise_paper_run.sh              # loop forever, 60 s interval
 #   backend/supervise_paper_run.sh --once       # one check, then exit
 #   backend/supervise_paper_run.sh --status     # report liveness, then exit
+#
 # Env overrides (all optional):
-#   HALAL_SUPERVISOR_INTERVAL   seconds between checks (default 60)
+#   HALAL_SUPERVISOR_INTERVAL   seconds between checks (default 60 legacy, 15 per-run)
 #   HALAL_SUPERVISOR_DRY_RUN=1  log what it would do, never launch anything
 #   HALAL_SUPERVISOR_LOG        supervisor log path
 #   HALAL_SUPERVISOR_BACKEND_DIR / HALAL_SUPERVISOR_PYTHON  path overrides
 #
-# NOT installed, NOT enabled, NOT attached to the currently running process by
-# this repository. Installing it is the owner's explicit decision (see
-# backend/deploy/README.md).
+# Installing the systemd unit is the owner's explicit decision (see
+# backend/deploy/README.md). /home/team/shared/start_paper_runs.sh starts one
+# per-run supervisor per paper run.
 set -u
 
 BACKEND_DIR="${HALAL_SUPERVISOR_BACKEND_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 PYTHON="${HALAL_SUPERVISOR_PYTHON:-$BACKEND_DIR/.venv/bin/python}"
 RUNNER="$BACKEND_DIR/run_paper_trading.py"
 ENV_FILE="$BACKEND_DIR/.env"
+
+# Defaults (legacy single-run mode).
+LABEL=""
+RUN_ARGS=()
 RUN_LOG="${HALAL_SUPERVISOR_RUN_LOG:-$BACKEND_DIR/paper_run.log}"
 SUP_LOG="${HALAL_SUPERVISOR_LOG:-$BACKEND_DIR/supervise_paper_run.log}"
-INTERVAL="${HALAL_SUPERVISOR_INTERVAL:-60}"
+INTERVAL="${HALAL_SUPERVISOR_INTERVAL:-}"
 DRY_RUN="${HALAL_SUPERVISOR_DRY_RUN:-0}"
 
 # Only matches a python process running the runner (never this script, never an
@@ -57,10 +89,8 @@ DRY_RUN="${HALAL_SUPERVISOR_DRY_RUN:-0}"
 # without a real run present — leave it alone in production.
 PROC_PATTERN="${HALAL_SUPERVISOR_PROC_PATTERN:-python[0-9.]* .*run_paper_trading\.py}"
 
-# The owner's canonical launch flags — identical to the live run
-# (PID 299) and to /home/team/shared/relaunch_paper_run.sh. `--symbol` is left
-# at its default (BTCUSDT) so the relaunched cmdline matches exactly.
-RUN_FLAGS=(
+# The owner's canonical legacy launch flags (single-run mode only).
+LEGACY_RUN_FLAGS=(
   --strategy donchian_1d
   --timeframe 1d
   --starting-usdt 1000
@@ -71,34 +101,87 @@ RUN_FLAGS=(
   --weekly-report-utc 12:00
 )
 
+MODE="loop"
+
+usage() { sed -n '2,90p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
 log() {
   local line
-  line="$(date -u '+%Y-%m-%dT%H:%M:%SZ') [supervise] $*"
+  line="$(date -u '+%Y-%m-%dT%H:%M:%SZ') [supervise${LABEL:+ $LABEL}] $*"
   printf '%s\n' "$line"
   printf '%s\n' "$line" >> "$SUP_LOG" 2>/dev/null || true
 }
 
+cmdline_of() { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null; }
+
 # PIDs of a live runner process (empty when none).
+#   per-run mode: only processes carrying THIS label, never a supervisor.
+#   legacy mode : any runner at all.
 running_pids() {
-  pgrep -f "$PROC_PATTERN" 2>/dev/null | tr '\n' ' '
+  local pid cmd
+  if [ -z "$LABEL" ]; then
+    pgrep -f "$PROC_PATTERN" 2>/dev/null | tr '\n' ' '
+    return 0
+  fi
+  for pid in $(pgrep -f "$PROC_PATTERN" 2>/dev/null); do
+    cmd=$(cmdline_of "$pid") || continue
+    case "$cmd" in
+      *supervise_paper_run.sh*) continue ;;
+      *"--run-label $LABEL"*) printf '%s\n' "$pid" ;;
+    esac
+  done
 }
 
 is_alive() {
-  [ -n "$(running_pids | tr -d ' ')" ]
+  [ -n "$(running_pids | tr -d ' \n')" ]
+}
+
+# If more than one process is running this label, keep the oldest and stop the
+# rest. Only ever signals processes of this label (legacy mode: only when the
+# caller explicitly asks, which it does not).
+dedupe() {
+  local pids first rest pid
+  [ -n "$LABEL" ] || return 0
+  pids=$(running_pids | sort -n | tr '\n' ' ')
+  pids=${pids% }
+  [ -n "$pids" ] || return 0
+  first=${pids%% *}
+  rest=${pids#"$first"}
+  for pid in $rest; do
+    log "duplicate runner for $LABEL (pid $pid) — stopping it, keeping pid $first"
+    kill -TERM "$pid" 2>/dev/null || true
+  done
 }
 
 launch() {
+  local flags
+  if [ -n "$LABEL" ]; then
+    flags="${RUN_ARGS[*]}"
+  else
+    flags="${LEGACY_RUN_FLAGS[*]}"
+  fi
   if [ "$DRY_RUN" = "1" ]; then
-    log "DRY RUN: would launch '$PYTHON $RUNNER ${RUN_FLAGS[*]}'"
+    log "DRY RUN: would launch '$PYTHON $RUNNER $flags'"
     return 0
   fi
-  log "launching: $PYTHON $RUNNER ${RUN_FLAGS[*]}"
+  log "launching: $PYTHON $RUNNER $flags"
   # setsid + nohup: survives this shell; output goes to the run's own log, so
-  # the audit trail / Telegram behaviour is unchanged.
-  ( cd "$BACKEND_DIR" && setsid nohup "$PYTHON" "$RUNNER" "${RUN_FLAGS[@]}" >> "$RUN_LOG" 2>&1 & )
+  # the audit trail / Telegram behaviour is unchanged. Paper-only env is forced.
+  # pushd/popd (not a `( ... & )` subshell) so no shell of ours stays behind
+  # waiting on the run and holding its std streams open.
+  pushd "$BACKEND_DIR" >/dev/null || { log "cannot cd $BACKEND_DIR"; return 1; }
+  if [ -n "$LABEL" ]; then
+    HALAL_TRADING_MODE=paper HALAL_LIVE_ENABLED=false \
+      setsid nohup "$PYTHON" "$RUNNER" "${RUN_ARGS[@]}" >> "$RUN_LOG" 2>&1 < /dev/null &
+  else
+    HALAL_TRADING_MODE=paper HALAL_LIVE_ENABLED=false \
+      setsid nohup "$PYTHON" "$RUNNER" "${LEGACY_RUN_FLAGS[@]}" >> "$RUN_LOG" 2>&1 < /dev/null &
+  fi
+  popd >/dev/null
   sleep 8
   if is_alive; then
-    log "runner is up (pid $(running_pids))"
+    dedupe
+    log "runner is up (pid $(running_pids | tr '\n' ' '))"
     return 0
   fi
   log "launch did not come up — see $RUN_LOG"
@@ -107,28 +190,54 @@ launch() {
 
 check() {
   # 0 = nothing to do (alive or deliberately idle), 1 = a relaunch was attempted
-  if [ ! -f "$ENV_FILE" ]; then
+  if [ -z "$LABEL" ] && [ ! -f "$ENV_FILE" ]; then
     log "no $ENV_FILE — nothing to supervise (no-op)"
     return 0
   fi
   if is_alive; then
+    dedupe
     return 0
   fi
-  log "paper run is NOT running — relaunching"
+  log "paper run${LABEL:+ $LABEL} is NOT running — relaunching"
   launch
 }
 
 main() {
-  local mode="loop"
-  case "${1:-}" in
-    --once) mode="once" ;;
-    --status) mode="status" ;;
-    --help|-h) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
-    "") ;;
-    *) printf 'unknown argument %s (try --help)\n' "$1" >&2; return 2 ;;
-  esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --once) MODE="once"; shift ;;
+      --status) MODE="status"; shift ;;
+      --help|-h) usage; return 0 ;;
+      --run-label) LABEL="${2:-}"; shift 2 || shift ;;
+      --run-log) RUN_LOG="${2:-}"; shift 2 || shift ;;
+      --interval) INTERVAL="${2:-}"; shift 2 || shift ;;
+      --supervisor-log) SUP_LOG="${2:-}"; shift 2 || shift ;;
+      --) shift; RUN_ARGS=("$@"); break ;;
+      "") shift ;;
+      *) printf 'unknown argument %s (try --help)\n' "$1" >&2; return 2 ;;
+    esac
+  done
 
-  log "start | backend='$BACKEND_DIR' interval=${INTERVAL}s dry_run=$DRY_RUN mode=$mode"
+  if [ -n "$LABEL" ] && [ ${#RUN_ARGS[@]} -eq 0 ]; then
+    printf 'per-run mode needs the runner flags after -- (got none)\n' >&2
+    return 2
+  fi
+  if [ -n "$LABEL" ]; then
+    case " ${RUN_ARGS[*]} " in
+      *" --run-label $LABEL "*) : ;;
+      *) printf 'refusing: runner flags do not carry --run-label %s\n' "$LABEL" >&2; return 2 ;;
+    esac
+    : "${INTERVAL:=15}"
+    # One supervisor per label: hold an exclusive lock for this process's life.
+    exec 9>>"$SUP_LOG" || { printf 'cannot open %s\n' "$SUP_LOG" >&2; return 2; }
+    if ! flock -n 9; then
+      log "another supervisor already holds $SUP_LOG — exiting (never a second supervisor for one run)"
+      return 0
+    fi
+  fi
+  : "${INTERVAL:=60}"
+
+  log "start | backend='$BACKEND_DIR' label='${LABEL:-<legacy>}' interval=${INTERVAL}s dry_run=$DRY_RUN mode=$MODE"
   if [ ! -f "$RUNNER" ]; then
     log "run_paper_trading.py not found at $RUNNER — refusing to do anything"
     return 2
@@ -138,24 +247,25 @@ main() {
     return 2
   fi
 
-  if [ "$mode" = "status" ]; then
+  if [ "$MODE" = "status" ]; then
     if is_alive; then
-      log "alive: $(running_pids)"
+      log "alive: $(running_pids | tr '\n' ' ')"
       return 0
     fi
     log "not running"
     return 1
   fi
 
-  if [ ! -f "$ENV_FILE" ]; then
+  if [ -z "$LABEL" ] && [ ! -f "$ENV_FILE" ]; then
     log "no $ENV_FILE — nothing to supervise; exiting"
     return 0
   fi
   if is_alive; then
-    log "a paper run is already alive (pid $(running_pids)) — monitoring only, never a second instance"
+    log "paper run${LABEL:+ $LABEL} is already alive (pid $(running_pids | tr '\n' ' ')) — monitoring only, never a second instance"
+    dedupe
   fi
 
-  if [ "$mode" = "once" ]; then
+  if [ "$MODE" = "once" ]; then
     check || true
     log "single check done — exiting"
     return 0
@@ -176,6 +286,7 @@ main() {
       fi
     else
       backoff=0
+      dedupe
     fi
     sleep "$INTERVAL"
   done
