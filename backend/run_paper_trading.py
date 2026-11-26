@@ -380,6 +380,9 @@ DEFAULT_REPORT_STATE_FILENAME = "paper_run_state.json"
 #: Report kinds that get their own persisted watermark.
 REPORT_KINDS: tuple[str, ...] = ("daily", "weekly")
 
+#: The same kinds upper-cased — the only labels a report may render itself with.
+REPORT_KINDS_UPPER: tuple[str, ...] = tuple(k.upper() for k in REPORT_KINDS)
+
 #: How many exact slot keys to keep per kind (belt-and-braces dedupe + audit).
 MAX_REMEMBERED_KEYS = 20
 
@@ -685,6 +688,7 @@ class PaperRun:
         state_path: Optional[Any] = None,
         window_days: int = 30,
         run_label: str = "",
+        strategy_name: str = "",
     ) -> None:
         self.settings = settings
         self.source = source
@@ -718,6 +722,13 @@ class PaperRun:
             raise ValueError(f"window_days must be positive, got {window_days!r}")
         #: Short run identifier rendered into reports/logs ("" = unlabelled).
         self.run_label = str(run_label or "").strip()
+        #: Strategy id as configured (the CLI ``--strategy`` name when known,
+        #: otherwise the strategy object's own name). Rendered into every report
+        #: next to the timeframe so a report names its own run even when the
+        #: label is missing or wrong. Reporting only — it never selects anything.
+        self.strategy_name = str(strategy_name or "").strip() or str(
+            getattr(strategy, "name", type(strategy).__name__)
+        )
         self._now = now
         self.log = logger
 
@@ -1131,14 +1142,25 @@ class PaperRun:
             stage=machine_stage(self.machine),
             paper_days=self.paper_days(now),
             data_source=self.last_candle_source or "unknown",
+            strategy=self.strategy_name,
+            timeframe=self.timeframe,
             run_label=self.run_label,
             window_days=self.window_days,
         )
 
     async def send_report(self, kind: str, *, now: Optional[datetime] = None) -> dict[str, Any]:
-        """Build and send one report. Fail-safe: never raises, never blocks."""
+        """Build and send one report. Fail-safe: never raises, never blocks.
+
+        Only ``"daily"`` and ``"weekly"`` are accepted: any other kind would have
+        to borrow one of the two headers and would then mislabel itself.
+        """
         now = now or self._now()
         label = kind.upper()
+        if label not in REPORT_KINDS_UPPER:
+            raise ValueError(
+                f"unknown report kind {kind!r}; expected one of "
+                f"{sorted(k.lower() for k in REPORT_KINDS_UPPER)}"
+            )
         period_start = now - timedelta(days=1 if label == "DAILY" else 7)
         stats = self.current_stats(label=label, period_start=period_start, now=now)
         text = (
@@ -1655,6 +1677,7 @@ async def main(argv: Optional[list[str]] = None) -> int:
         state_path=state_path,
         window_days=args.window_days,
         run_label=args.run_label,
+        strategy_name=args.strategy,
     )
 
     if args.once:

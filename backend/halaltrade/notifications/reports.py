@@ -15,6 +15,16 @@ Honesty rules (matching the rest of the repo):
   rate of ``0.0`` — never a flattering placeholder.
 * Reports are **simulated paper results**; they are not a profit guarantee and
   they never imply live trading is enabled.
+* The report's **mode** is ``PAPER`` — that is what the run is (simulated money,
+  live order path off). The progression ladder's position is a *separate* fact
+  and is printed separately (``progression: BACKTEST``). This module never
+  mutates or infers the ladder; a fresh database legitimately sits at BACKTEST
+  and must keep sitting there until its own evidence gates pass.
+* Every run-identifying field (symbol, strategy, timeframe, run label) comes
+  from the run's configuration, so two runs posting to the same chat can never
+  be confused even if one label is wrong or empty.
+* The paper-day count is never printed against a window it exceeds: the line
+  says so in words instead of printing an impossible "day 400 of 30".
 """
 from __future__ import annotations
 
@@ -104,9 +114,17 @@ class PaperStats:
     open_position_qty: float = 0.0
     period_start: Optional[datetime] = None
     symbol: str = "BTCUSDT"
+    #: The progression ladder's *current* stage (e.g. ``"BACKTEST"``). It is
+    #: reported as the ladder position, never as the run's mode — the two are
+    #: different facts and the report prints them on separate parts of one line.
     stage: str = ""
     paper_days: float = 0.0
     data_source: str = ""
+    #: Strategy id the run was started with (e.g. ``"donchian_1d"``). Together
+    #: with ``timeframe`` this identifies a run independently of its label.
+    strategy: str = ""
+    #: Bar timeframe the run trades (e.g. ``"1d"``).
+    timeframe: str = ""
     #: Identifier of the run this report belongs to (e.g. ``"1D-CH15"``). Empty
     #: by default so a single-run report is unchanged; set it when more than one
     #: paper run reports to the same Telegram chat, so the two are not confused.
@@ -156,6 +174,8 @@ class PaperStats:
             "stage": self.stage,
             "paper_days": self.paper_days,
             "data_source": self.data_source,
+            "strategy": self.strategy,
+            "timeframe": self.timeframe,
             "run_label": self.run_label,
             "window_days": self.window_days,
         }
@@ -181,6 +201,8 @@ def compute_stats(
     stage: str = "",
     paper_days: float = 0.0,
     data_source: str = "",
+    strategy: str = "",
+    timeframe: str = "",
     run_label: str = "",
     window_days: int = 30,
 ) -> PaperStats:
@@ -231,6 +253,8 @@ def compute_stats(
         stage=stage,
         paper_days=paper_days,
         data_source=data_source,
+        strategy=strategy,
+        timeframe=timeframe,
         run_label=run_label,
         window_days=window_days,
     )
@@ -354,6 +378,8 @@ class PerformanceTracker:
         stage: str = "",
         paper_days: float = 0.0,
         data_source: str = "",
+        strategy: str = "",
+        timeframe: str = "",
         run_label: str = "",
         window_days: int = 30,
     ) -> PaperStats:
@@ -370,6 +396,8 @@ class PerformanceTracker:
             stage=stage,
             paper_days=paper_days,
             data_source=data_source,
+            strategy=strategy,
+            timeframe=timeframe,
             run_label=run_label,
             window_days=window_days,
         )
@@ -390,13 +418,55 @@ def _fmt_profit_factor(value: float) -> str:
     return f"{value:.2f}"
 
 
+def _fmt_identity(stats: PaperStats) -> str:
+    """Symbol + strategy/timeframe + the simulated-money disclaimer.
+
+    The strategy and timeframe are printed whenever the caller supplied them, so
+    two runs reporting to the same chat stay distinguishable from the line alone
+    — even if a run label is wrong, stale or empty.
+    """
+    parts = [stats.symbol]
+    strategy = stats.strategy.strip()
+    timeframe = stats.timeframe.strip()
+    if strategy and timeframe:
+        parts.append(f"strategy {strategy} @ {timeframe}")
+    elif strategy:
+        parts.append(f"strategy {strategy}")
+    elif timeframe:
+        parts.append(f"timeframe {timeframe}")
+    parts.append("simulated money (no live order path)")
+    return " — ".join(parts)
+
+
+def _fmt_paper_day(paper_days: float, window_days: int) -> str:
+    """``paper day N of W`` — never a day count printed against a shorter window.
+
+    A run that has been alive longer than its declared reporting window is a
+    normal thing (the window labels the report, it does not stop the run), so
+    the line says so in words instead of printing an impossible "day 400 of 30".
+    """
+    if window_days is None or int(window_days) <= 0:
+        return f"paper day {paper_days:.1f} (no reporting window declared)"
+    window = int(window_days)
+    if paper_days > window:
+        return (
+            f"paper day {paper_days:.1f} — beyond the declared {window}-day "
+            f"reporting window"
+        )
+    return f"paper day {paper_days:.1f} of {window}"
+
+
 def format_report(stats: PaperStats) -> str:
     """Format one daily/weekly paper report. Pure function.
 
-    When ``stats.run_label`` is set it is rendered into the header (and the
-    stage line) so two paper runs reporting to the same chat are never
-    confusable. Empty by default — a single run's report is byte-identical to
-    what it was before the label existed.
+    The run's **mode** is always ``PAPER`` (simulated money, live order path
+    off) — that is what every report from this module is. The progression
+    ladder's own position is printed next to it as a separate, clearly labelled
+    fact (``progression: BACKTEST``); this function never changes it.
+
+    When ``stats.run_label`` is set it is rendered into the header so two paper
+    runs reporting to the same chat are never confusable. Empty by default — a
+    single run's report carries no brackets anywhere.
     """
     icon = "\U0001F4C5" if stats.label.upper().startswith("D") else "\U0001F5D3"
     title = stats.label.title()
@@ -405,7 +475,7 @@ def format_report(stats: PaperStats) -> str:
         header += f" [{stats.run_label}]"
     lines = [
         f"{header} — {stats.period_end:%Y-%m-%d %H:%M} UTC",
-        f"{stats.symbol} — simulated money (no live order path)",
+        _fmt_identity(stats),
         f"Equity: {_fmt_money(stats.starting_equity)} -> {_fmt_money(stats.ending_equity)} "
         f"({stats.pnl_pct:+.2f}%)",
         f"Period P&L: {stats.pnl:+,.2f} USDT",
@@ -417,13 +487,12 @@ def format_report(stats: PaperStats) -> str:
         f"Fees paid: {_fmt_money(stats.fees_paid)}",
         f"Open position: {stats.open_position_qty:.8f} BTC",
     ]
+    mode_parts = ["Mode: PAPER (simulated, live off)"]
     if stats.stage:
-        stage_line = f"Stage: {stats.stage}"
-        if stats.run_label:
-            stage_line += f" [{stats.run_label}]"
-        if stats.paper_days > 0:
-            stage_line += f" — paper day {stats.paper_days:.1f} of {stats.window_days}"
-        lines.append(stage_line)
+        mode_parts.append(f"progression: {stats.stage}")
+    if stats.paper_days > 0:
+        mode_parts.append(_fmt_paper_day(stats.paper_days, stats.window_days))
+    lines.append(" — ".join(mode_parts))
     if stats.data_source:
         lines.append(f"Market data: {stats.data_source} (freshness checked per bar)")
     lines.append("Simulated paper results — not a profit guarantee.")
